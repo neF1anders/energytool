@@ -1,0 +1,17 @@
+[project]
+name = "hack-n-change-2026"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "ne-F1anders", email = "sosnovgreg@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+hack-n-change-2026 = "hack_n_change_2026:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
