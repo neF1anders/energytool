@@ -357,10 +357,11 @@ GET  /healthz
 
 `openrouter`: `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_API_KEY` — ключ OpenRouter, `LLM_MODEL` — id той же Qwen 27B в каталоге OpenRouter (сверить с моделью платформы). Эмбеддер и реранкер настраиваются отдельно: `EMB_BASE_URL`, `EMB_API_KEY`, `RERANKER_BASE_URL`, `RERANKER_API_KEY` (по умолчанию — как у LLM). Если OpenRouter их не отдаёт, `EMB_PROVIDER=local` / `RERANKER_PROVIDER=local` — bge-m3 и Qwen3-Reranker-0.6B на CPU из группы `local-models` (только разработка, в ZIP не попадает). Код ядра от профиля не зависит: меняются только адаптеры в `bootstrap.py`.
 
-Файлы: `.env.example` (все переменные без значений, оба профиля с комментариями), `.env` — локальный, в `.gitignore`.
+Файлы: `.env.example` (все переменные без значений, оба профиля с комментариями), `.env` — локальный, в `.gitignore`. Подключение `.env` — `uv run --env-file .env …`, без `python-dotenv` в ядре. **[M0]**
 
 Переменные платформы (из примера сабмита): `DATA_DIR`, `LLM_BASE_URL` (`BASE_URL`, `OPENAI_BASE_URL`), `LLM_API_KEY` (`OPENAI_API_KEY`), `EMBEDDER_API_KEY`, `RERANKER_API_KEY`, `LLM_MODEL` (`GEN_MODEL`, `OPENAI_MODEL`), `EMB_MODEL`, `RERANKER_MODEL`, `TOP_K`, `RERANKER_TOP_N`, `MAX_TOKENS`, `TEMPERATURE`, `MAX_WORKERS`.
-Свои: `SQLITE_PATH`, `CRM_WEBHOOK_URL`, `RETRIEVAL_CONFIG` (имя конфигурации пайплайна), `LOG_LEVEL`, `RUN_BUDGET_SEC` (по умолчанию 1080).
+Свои: `SQLITE_PATH`, `CRM_WEBHOOK_URL`, `RETRIEVAL_CONFIG` (имя конфигурации пайплайна), `LOG_LEVEL`, `LOG_FORMAT` (`json` | `text`), `LLM_MAX_RETRIES` (3), `EMB_PROVIDER` / `RERANKER_PROVIDER` (`remote` | `local`), `RUN_BUDGET_SEC` (по умолчанию 1080).
+Чтение env — как в примере сабмита: пустое значение или значение, равное имени переменной, считается отсутствующим; числа обрезаются по границам. Ключи в `Settings` скрыты из `repr`, в лог старта идёт `safe_summary()` (только `has_key`). Для `openrouter` `LLM_MODEL` обязателен; для `platform` при пустом env берутся имена моделей из примера сабмита. **[M0]**
 Все читаются в `infrastructure/config.py` → `Settings`. Ключей в репозитории нет, `.env.example`.
 
 ## 11. Зависимости

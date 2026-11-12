@@ -1,0 +1,208 @@
+"""Settings: инфраструктурные параметры из окружения (docs/spec.md §10).
+
+Бизнес-параметры (пороги, веса правил) здесь не живут — они в domain (§5.5).
+
+Профили (MODELS_PROFILE):
+- platform   — прокси организаторов, адрес и ключ передаёт платформа;
+- openrouter — локальная разработка: OpenRouter, ключ из .env
+  (`uv run --env-file .env ...`).
+
+Имена переменных и их синонимы совпадают с примером сабмита организаторов. Ключи
+хранятся в полях с repr=False и в лог попадают только через safe_summary().
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from enum import StrEnum
+from pathlib import Path
+from typing import Literal
+
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Имена моделей платформы из примера сабмита; используются, только если env не задал свои.
+PLATFORM_LLM_MODEL = "qwen/qwen3.8-27b"
+PLATFORM_EMB_MODEL = "baai/bge-m3"
+PLATFORM_RERANKER_MODEL = "qwen/qwen3-reranker-8b"
+
+LogFormat = Literal["json", "text"]
+ModelProvider = Literal["remote", "local"]
+
+
+class ConfigError(ValueError):
+    """Окружение не позволяет запустить нужную часть системы."""
+
+
+class ModelsProfile(StrEnum):
+    PLATFORM = "platform"
+    OPENROUTER = "openrouter"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelEndpoint:
+    """Адрес, ключ и модель одного OpenAI-совместимого эндпоинта."""
+
+    base_url: str
+    model: str
+    api_key: str = field(default="", repr=False)
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.base_url and self.api_key and self.model)
+
+
+@dataclass(frozen=True, slots=True)
+class Timeouts:
+    chat_sec: float = 30.0
+    embed_sec: float = 10.0
+    rerank_sec: float = 10.0
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    profile: ModelsProfile
+    data_dir: Path
+    llm: ModelEndpoint
+    embedder: ModelEndpoint
+    reranker: ModelEndpoint
+    embedder_provider: ModelProvider = "remote"
+    reranker_provider: ModelProvider = "remote"
+    temperature: float = 0.1
+    max_tokens: int = 1024
+    max_workers: int = 4
+    top_k: int = 4
+    reranker_top_n: int = 4
+    timeouts: Timeouts = field(default_factory=Timeouts)
+    max_retries: int = 3
+    log_level: str = "INFO"
+    log_format: LogFormat = "json"
+    run_budget_sec: int = 1080
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> Settings:
+        reader = _EnvReader(env)
+        profile = _parse_profile(reader.text("MODELS_PROFILE", ModelsProfile.PLATFORM.value))
+        llm = _llm_endpoint(reader, profile)
+        return cls(
+            profile=profile,
+            data_dir=Path(reader.text("DATA_DIR", "data")),
+            llm=llm,
+            embedder=ModelEndpoint(
+                base_url=reader.url("EMB_BASE_URL") or llm.base_url,
+                api_key=reader.first("EMB_API_KEY", "EMBEDDER_API_KEY") or llm.api_key,
+                model=reader.text("EMB_MODEL", PLATFORM_EMB_MODEL),
+            ),
+            reranker=ModelEndpoint(
+                base_url=reader.url("RERANKER_BASE_URL") or llm.base_url,
+                api_key=reader.text("RERANKER_API_KEY") or llm.api_key,
+                model=reader.text("RERANKER_MODEL", PLATFORM_RERANKER_MODEL),
+            ),
+            embedder_provider=_parse_provider(reader.text("EMB_PROVIDER", "remote")),
+            reranker_provider=_parse_provider(reader.text("RERANKER_PROVIDER", "remote")),
+            temperature=reader.number("TEMPERATURE", 0.1, 0.0, 2.0),
+            max_tokens=reader.integer("MAX_TOKENS", 1024, 128, 8192),
+            max_workers=reader.integer("MAX_WORKERS", 4, 1, 16),
+            top_k=reader.integer("TOP_K", 4, 1, 30),
+            reranker_top_n=reader.integer("RERANKER_TOP_N", 4, 1, 30),
+            max_retries=reader.integer("LLM_MAX_RETRIES", 3, 0, 5),
+            log_level=reader.text("LOG_LEVEL", "INFO").upper(),
+            log_format="text" if reader.text("LOG_FORMAT", "json") == "text" else "json",
+            run_budget_sec=reader.integer("RUN_BUDGET_SEC", 1080, 60, 1200),
+        )
+
+    def require_llm(self) -> None:
+        """Fail fast на старте точек входа, которым нужна генеративная модель."""
+        if not self.llm.configured:
+            missing = [
+                name
+                for name, value in (
+                    ("LLM_BASE_URL", self.llm.base_url),
+                    ("LLM_API_KEY", self.llm.api_key),
+                    ("LLM_MODEL", self.llm.model),
+                )
+                if not value
+            ]
+            raise ConfigError(f"профиль {self.profile}: не заданы {', '.join(missing)}")
+
+    def safe_summary(self) -> dict[str, object]:
+        """Настройки для лога старта: без ключей, только факт их наличия."""
+        return {
+            "profile": self.profile.value,
+            "data_dir": str(self.data_dir),
+            "llm": _endpoint_summary(self.llm),
+            "embedder": {**_endpoint_summary(self.embedder), "provider": self.embedder_provider},
+            "reranker": {**_endpoint_summary(self.reranker), "provider": self.reranker_provider},
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "max_workers": self.max_workers,
+            "top_k": self.top_k,
+            "reranker_top_n": self.reranker_top_n,
+            "max_retries": self.max_retries,
+            "run_budget_sec": self.run_budget_sec,
+        }
+
+
+def _llm_endpoint(reader: _EnvReader, profile: ModelsProfile) -> ModelEndpoint:
+    default_url = OPENROUTER_BASE_URL if profile is ModelsProfile.OPENROUTER else ""
+    # для openrouter id модели обязателен в .env: каталог OpenRouter не совпадает с платформой
+    default_model = PLATFORM_LLM_MODEL if profile is ModelsProfile.PLATFORM else ""
+    return ModelEndpoint(
+        base_url=reader.url("LLM_BASE_URL", "BASE_URL", "OPENAI_BASE_URL") or default_url,
+        api_key=reader.first("LLM_API_KEY", "OPENAI_API_KEY"),
+        model=reader.first("LLM_MODEL", "GEN_MODEL", "OPENAI_MODEL") or default_model,
+    )
+
+
+def _endpoint_summary(endpoint: ModelEndpoint) -> dict[str, object]:
+    return {
+        "base_url": endpoint.base_url,
+        "model": endpoint.model,
+        "has_key": bool(endpoint.api_key),
+    }
+
+
+def _parse_profile(raw: str) -> ModelsProfile:
+    try:
+        return ModelsProfile(raw.lower())
+    except ValueError as exc:
+        options = ", ".join(p.value for p in ModelsProfile)
+        raise ConfigError(f"MODELS_PROFILE={raw!r}: ожидается одно из {options}") from exc
+
+
+def _parse_provider(raw: str) -> ModelProvider:
+    if raw == "local":
+        return "local"
+    if raw == "remote":
+        return "remote"
+    raise ConfigError(f"провайдер модели {raw!r}: ожидается remote или local")
+
+
+@dataclass(frozen=True, slots=True)
+class _EnvReader:
+    """Чтение env по правилам примера сабмита: пустое значение или значение, равное
+    имени переменной (незаполненный шаблон платформы), считается отсутствующим."""
+
+    env: Mapping[str, str]
+
+    def text(self, name: str, default: str = "") -> str:
+        value = self.env.get(name, "").strip()
+        return default if not value or value == name else value
+
+    def first(self, *names: str) -> str:
+        return next((value for name in names if (value := self.text(name))), "")
+
+    def url(self, *names: str) -> str:
+        return self.first(*names).rstrip("/")
+
+    def integer(self, name: str, default: int, lower: int, upper: int) -> int:
+        try:
+            return max(lower, min(upper, int(self.text(name))))
+        except ValueError:
+            return default
+
+    def number(self, name: str, default: float, lower: float, upper: float) -> float:
+        try:
+            return max(lower, min(upper, float(self.text(name))))
+        except ValueError:
+            return default
