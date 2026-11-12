@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from energytool.domain.extraction import Extraction
 from energytool.domain.knowledge import Chunk, Scope, SectionKind
-from energytool.domain.lead import Lead
+from energytool.domain.lead import Brief, Lead
 from energytool.domain.reply import Reply, ReplyPlan
 from energytool.domain.slots import SlotSpec
 from energytool.domain.state import ConversationState, Message
@@ -141,6 +141,12 @@ class SectionTagger(Protocol):
 class SessionRepo(Protocol):
     def load(self, session_id: str) -> ConversationState | None: ...
     def save(self, state: ConversationState, trace: TurnTrace) -> None: ...
+
+
+class BriefRenderer(Protocol):
+    """Brief → (человекочитаемый текст, JSON для CRM). Реализация — infrastructure."""
+
+    def render(self, brief: Brief) -> tuple[str, dict[str, object]]: ...
 
 
 class LeadSink(Protocol):
