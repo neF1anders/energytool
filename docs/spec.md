@@ -1,6 +1,6 @@
 # Ассистент-квалификатор Energytool — спецификация
 
-Статус: v0.2 · 2026-11-12 · M0 готов (кроме живой проверки gateway). Изменения по ходу разработки помечены **[Mn]**.
+Статус: v0.2 · 2026-11-12 · M0 готов. Изменения по ходу разработки помечены **[Mn]**.
 Диаграммы: [`docs/diagrams/`](diagrams/README.md) · сущности домена: [`src/energytool/domain/`](../src/energytool/domain/) · порты и use cases: [`src/energytool/application/`](../src/energytool/application/)
 
 ---
@@ -307,7 +307,8 @@ httpx-клиент к OpenAI-совместимому прокси: `chat/comple
 - повторяются timeout, сетевая ошибка, HTTP 408/409/425/429/5xx; пауза `0.5·2^n` с, `Retry-After` учитывается (не дольше 8 с); `LLM_MAX_RETRIES` (по умолчанию 3). Прочие 4xx (например, 401 `token_not_found_in_db`) не повторяются;
 - ошибки: `LlmUnavailableError` (повторы исчерпаны), `LlmRequestError` (4xx, нет адреса/ключа), `LlmResponseError` (ответ не по протоколу) — общий предок `LlmGatewayError`; на них строится деградация (§6.2);
 - каждый вызов — `LlmCall(kind, model, ms, tokens_in, tokens_out, retries, ok, error)` в лог и в сборщик хода `application.trace.collecting_llm_calls()` (ContextVar): use case собирает вызовы в `TurnTrace`, не зная про gateway;
-- `<think>…</think>` вырезается из ответа; пустой ответ логируется с `finish_reason`. Как выключать thinking на прокси и OpenRouter — проверяется вживую (§16), параметр передаётся через `extra_body`.
+- `<think>…</think>` вырезается из ответа; пустой ответ логируется с `finish_reason`.
+- Thinking выключается по профилю (`LLM_DISABLE_THINKING=true` по умолчанию): `openrouter` — `reasoning: {enabled: false}` (проверено 2026-11-12: «Да» за 2 выходных токена и ~0.5 с вместо ~70–90 токенов и ~2.5 с; `chat_template_kwargs` и `/no_think` OpenRouter игнорирует); `platform` — `chat_template_kwargs: {enable_thinking: false}` (предположение: прокси на vLLM). Если прокси отвечает 400 на этот параметр, gateway один раз пишет warning и дальше шлёт запросы без него. **[M0]**
 
 ### 8.2 Extractor — `llm/extractor.py`
 Промпт: роль «извлекатель фактов», каталог полей (`id`, тип, варианты, единица; ~1k токенов), текущее состояние (заполненные поля), последние 6 реплик. Выход — JSON по схеме `Extraction`, сгенерированной из dataclass и реестра (`response_format=json_schema`, если прокси поддерживает; иначе JSON в тексте + валидация + один повтор). Требование: у каждого поля дословная `quote`.
@@ -372,7 +373,7 @@ GET  /healthz
 | `platform` | прогон этапа 1, демо | прокси организаторов из env платформы |
 | `openrouter` | локальная разработка, тесты и eval | та же генеративная модель (Qwen 27B) через OpenRouter |
 
-`openrouter`: `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_API_KEY` — ключ OpenRouter, `LLM_MODEL` — id той же Qwen 27B в каталоге OpenRouter (сверить с моделью платформы). Эмбеддер и реранкер настраиваются отдельно: `EMB_BASE_URL`, `EMB_API_KEY`, `RERANKER_BASE_URL`, `RERANKER_API_KEY` (по умолчанию — как у LLM). Если OpenRouter их не отдаёт, `EMB_PROVIDER=local` / `RERANKER_PROVIDER=local` — bge-m3 и Qwen3-Reranker-0.6B на CPU из группы `local-models` (только разработка, в ZIP не попадает). Код ядра от профиля не зависит: меняются только адаптеры в `bootstrap.py`.
+`openrouter`: `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_API_KEY` — ключ OpenRouter, `LLM_MODEL` — id той же Qwen 27B в каталоге OpenRouter (проверено: `qwen/qwen3.8-27b` — тот же id, что у платформы) **[M0]**. Эмбеддер и реранкер настраиваются отдельно: `EMB_BASE_URL`, `EMB_API_KEY`, `RERANKER_BASE_URL`, `RERANKER_API_KEY` (по умолчанию — как у LLM). На OpenRouter работают `baai/bge-m3` (размерность 1024) и `qwen/qwen3-reranker-8b` через `/rerank` — локальные модели и группа `local-models` пока не нужны **[M0]**. Если OpenRouter их не отдаёт, `EMB_PROVIDER=local` / `RERANKER_PROVIDER=local` — bge-m3 и Qwen3-Reranker-0.6B на CPU из группы `local-models` (только разработка, в ZIP не попадает). Код ядра от профиля не зависит: меняются только адаптеры в `bootstrap.py`.
 
 Файлы: `.env.example` (все переменные без значений, оба профиля с комментариями), `.env` — локальный, в `.gitignore`. Подключение `.env` — `uv run --env-file .env …`, без `python-dotenv` в ядре. **[M0]**
 
@@ -456,8 +457,8 @@ Git: ветки `feat/…`, `fix/…`; один PR — один этап раз�
 
 ## 16. Открытые вопросы
 
-- Реальный id модели и поддержка `response_format=json_schema` у прокси; как выключается thinking.
-- Есть ли на OpenRouter та же Qwen 27B, bge-m3 и реранкер; если нет — локальные эмбеддер и реранкер (раздел 10).
+- Поддержка `response_format=json_schema` у прокси платформы и как на нём выключается thinking (OpenRouter: id `qwen/qwen3.8-27b`, `reasoning.enabled=false`, `json_schema` заявлен — §8.1) **[M0]**.
+- ~~Есть ли на OpenRouter та же Qwen 27B, bge-m3 и реранкер~~ — есть, все три отвечают **[M0]**.
 - Есть ли у прокси лимит RPS — от этого зависит `MAX_WORKERS` и бюджет 20 минут.
 - Порог реранка τ и веса правил — подобрать на eval.
 - Нужен ли второй Extractor-вызов в батче для длинных диалогов (5 из 18 демо — диалоги).

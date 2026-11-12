@@ -156,3 +156,53 @@ def test_separate_reranker_endpoint_is_used() -> None:
     gateway, _ = make_gateway(handler, RERANKER_BASE_URL="http://rr/api", RERANKER_API_KEY="rk")
     gateway.rerank("q", ["d"], top_n=1)
     assert seen == ["http://rr/api/rerank Bearer rk"]
+
+
+def test_openrouter_profile_disables_reasoning() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=chat_body("ok"))
+
+    gateway, _ = make_gateway(handler, MODELS_PROFILE="openrouter")
+    gateway.chat([{"role": "user", "content": "x"}])
+    assert seen[0]["reasoning"] == {"enabled": False}
+    assert "chat_template_kwargs" not in seen[0]
+
+
+def test_platform_drops_thinking_params_after_400_once() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        seen.append(payload)
+        if "chat_template_kwargs" in payload:
+            return httpx.Response(400, text="unknown field chat_template_kwargs")
+        return httpx.Response(200, json=chat_body("ok"))
+
+    gateway, sleeps = make_gateway(handler)
+    assert gateway.chat([{"role": "user", "content": "1"}]).text == "ok"
+    assert gateway.chat([{"role": "user", "content": "2"}]).text == "ok"
+    assert ["chat_template_kwargs" in p for p in seen] == [True, False, False]
+    assert sleeps == []
+
+
+def test_other_client_errors_are_not_masked_by_thinking_fallback() -> None:
+    gateway, _ = make_gateway(lambda _: httpx.Response(401))
+    with pytest.raises(LlmRequestError) as error:
+        gateway.chat([{"role": "user", "content": "x"}])
+    assert error.value.status_code == 401
+
+
+def test_thinking_params_can_be_turned_off() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=chat_body("ok"))
+
+    gateway, _ = make_gateway(handler, LLM_DISABLE_THINKING="false")
+    gateway.chat([{"role": "user", "content": "x"}])
+    assert "chat_template_kwargs" not in seen[0]
+    assert "reasoning" not in seen[0]

@@ -24,7 +24,7 @@ from typing import Any, Literal, TypedDict
 import httpx
 
 from energytool.application.trace import LlmCall, LlmCallKind, record_llm_call
-from energytool.infrastructure.config import ModelEndpoint, Settings
+from energytool.infrastructure.config import ModelEndpoint, ModelsProfile, Settings
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,10 @@ class LlmUnavailableError(LlmGatewayError):
 
 class LlmRequestError(LlmGatewayError):
     """Запрос отклонён (4xx кроме ретраемых): ошибка конфигурации или запроса."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class LlmResponseError(LlmGatewayError):
@@ -80,6 +84,7 @@ class _Outcome:
     body: dict[str, Any] | None = None
     error: str = ""
     retry_delay: float | None = None
+    status_code: int | None = None
 
 
 class LlmGateway:
@@ -93,6 +98,7 @@ class LlmGateway:
         self._client = client or httpx.Client()
         self._sleep = sleep
         self._slots = threading.BoundedSemaphore(settings.max_workers)
+        self._thinking_off = _thinking_off_params(settings)
 
     def close(self) -> None:
         self._client.close()
@@ -119,9 +125,7 @@ class LlmGateway:
             payload["response_format"] = response_format
         if extra_body:
             payload.update(extra_body)
-        response = self._post(
-            "chat", endpoint, "/chat/completions", payload, self._settings.timeouts.chat_sec
-        )
+        response = self._post_chat(payload)
         result = _parse_chat(response, endpoint.model)
         if not result.text:
             logger.warning(
@@ -154,6 +158,28 @@ class LlmGateway:
 
     # --- транспорт ---------------------------------------------------------------------------
 
+    def _post_chat(self, payload: dict[str, Any]) -> _Response:
+        """chat/completions с выключенным thinking. Если прокси не знает параметр (400),
+        один раз пишем warning и дальше шлём без него: ответ важнее скорости."""
+        endpoint = self._settings.llm
+        timeout = self._settings.timeouts.chat_sec
+        thinking_off = self._thinking_off
+        if not thinking_off:
+            return self._post("chat", endpoint, "/chat/completions", payload, timeout)
+        try:
+            return self._post(
+                "chat", endpoint, "/chat/completions", {**thinking_off, **payload}, timeout
+            )
+        except LlmRequestError as exc:
+            if exc.status_code != 400:
+                raise
+            self._thinking_off = {}
+            logger.warning(
+                "thinking-off params rejected by proxy, continuing without them",
+                extra={"data": {"params": thinking_off, "error": str(exc)[:300]}},
+            )
+            return self._post("chat", endpoint, "/chat/completions", payload, timeout)
+
     def _post(
         self,
         kind: LlmCallKind,
@@ -178,7 +204,7 @@ class LlmGateway:
             if not retryable or attempt >= self._settings.max_retries:
                 self._report_failure(kind, endpoint.model, started, attempt, outcome.error)
                 if not retryable:
-                    raise LlmRequestError(f"{kind}: {outcome.error}")
+                    raise LlmRequestError(f"{kind}: {outcome.error}", outcome.status_code)
                 raise LlmUnavailableError(f"{kind}: {outcome.error}; попыток: {attempt + 1}")
             attempt += 1
             delay = outcome.retry_delay or 0.0
@@ -212,7 +238,7 @@ class LlmGateway:
             error = f"HTTP {reply.status_code}: {reply.text[:300]}"
             if reply.status_code in _RETRYABLE_STATUS:
                 return _Outcome(error=error, retry_delay=_retry_after(reply) or backoff)
-            return _Outcome(error=error)
+            return _Outcome(error=error, status_code=reply.status_code)
         try:
             body = reply.json()
         except ValueError:
@@ -247,6 +273,17 @@ class LlmGateway:
         )
         record_llm_call(call)
         logger.error("llm call failed", extra={"data": call})
+
+
+def _thinking_off_params(settings: Settings) -> dict[str, Any]:
+    """Как выключить thinking Qwen. OpenRouter: reasoning.enabled=false (проверено вживую,
+    2026-11-12: 2 выходных токена вместо ~70–90, chat_template_kwargs он игнорирует).
+    Прокси платформы — предположительно vLLM, у него chat_template_kwargs."""
+    if not settings.disable_thinking:
+        return {}
+    if settings.profile is ModelsProfile.OPENROUTER:
+        return {"reasoning": {"enabled": False}}
+    return {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 def _ms_since(started: float) -> float:

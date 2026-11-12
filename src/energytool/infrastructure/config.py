@@ -75,6 +75,7 @@ class Settings:
     reranker_top_n: int = 4
     timeouts: Timeouts = field(default_factory=Timeouts)
     max_retries: int = 3
+    disable_thinking: bool = True
     log_level: str = "INFO"
     log_format: LogFormat = "json"
     run_budget_sec: int = 1080
@@ -106,6 +107,7 @@ class Settings:
             top_k=reader.integer("TOP_K", 4, 1, 30),
             reranker_top_n=reader.integer("RERANKER_TOP_N", 4, 1, 30),
             max_retries=reader.integer("LLM_MAX_RETRIES", 3, 0, 5),
+            disable_thinking=reader.flag("LLM_DISABLE_THINKING", default=True),
             log_level=reader.text("LOG_LEVEL", "INFO").upper(),
             log_format="text" if reader.text("LOG_FORMAT", "json") == "text" else "json",
             run_budget_sec=reader.integer("RUN_BUDGET_SEC", 1080, 60, 1200),
@@ -139,6 +141,7 @@ class Settings:
             "top_k": self.top_k,
             "reranker_top_n": self.reranker_top_n,
             "max_retries": self.max_retries,
+            "disable_thinking": self.disable_thinking,
             "run_budget_sec": self.run_budget_sec,
         }
 
@@ -206,3 +209,11 @@ class _EnvReader:
             return max(lower, min(upper, float(self.text(name))))
         except ValueError:
             return default
+
+    def flag(self, name: str, *, default: bool) -> bool:
+        value = self.text(name).lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+        return default
