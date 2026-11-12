@@ -1,10 +1,9 @@
 import httpx
 import pytest
 
-from energytool.bootstrap import Container
+from energytool.bootstrap import Container, assemble
 from energytool.infrastructure.config import Settings
 from energytool.infrastructure.llm.gateway import LlmGateway
-from energytool.infrastructure.telemetry import LogTelemetry
 from energytool.interface.cli import ping
 
 
@@ -13,7 +12,7 @@ def container_with(handler: httpx.MockTransport) -> Container:
         {"LLM_BASE_URL": "http://proxy/v1", "LLM_API_KEY": "k", "LLM_MODEL": "qwen"}
     )
     gateway = LlmGateway(settings, client=httpx.Client(transport=handler))
-    return Container(settings=settings, gateway=gateway, telemetry=LogTelemetry())
+    return assemble(settings, gateway)
 
 
 def fake_proxy(request: httpx.Request) -> httpx.Response:

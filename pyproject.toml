@@ -46,11 +46,11 @@ known-first-party = ["energytool"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "eval"]
 exclude = ["^materials/"]
 
 [[tool.mypy.overrides]]
-module = ["tests.*"]
+module = ["tests.*", "eval.*"]
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]

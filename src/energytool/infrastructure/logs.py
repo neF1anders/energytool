@@ -134,6 +134,8 @@ def configure_logging(
     # httpx на INFO пишет каждый запрос; свои вызовы gateway логирует сам
     logging.getLogger("httpx").setLevel(max(logging.WARNING, root.level))
     logging.getLogger("httpcore").setLevel(max(logging.WARNING, root.level))
+    # bm25s сам выставляет своему логгеру DEBUG
+    logging.getLogger("bm25s").setLevel(max(logging.WARNING, root.level))
 
 
 @contextmanager
