@@ -76,6 +76,8 @@ class Settings:
     timeouts: Timeouts = field(default_factory=Timeouts)
     max_retries: int = 3
     disable_thinking: bool = True
+    embedding_cache_dir: Path | None = None
+    retrieval_config: str = "hybrid_rerank"
     log_level: str = "INFO"
     log_format: LogFormat = "json"
     run_budget_sec: int = 1080
@@ -108,6 +110,8 @@ class Settings:
             reranker_top_n=reader.integer("RERANKER_TOP_N", 4, 1, 30),
             max_retries=reader.integer("LLM_MAX_RETRIES", 3, 0, 5),
             disable_thinking=reader.flag("LLM_DISABLE_THINKING", default=True),
+            embedding_cache_dir=Path(cache) if (cache := reader.text("EMB_CACHE_DIR")) else None,
+            retrieval_config=reader.text("RETRIEVAL_CONFIG", "hybrid_rerank"),
             log_level=reader.text("LOG_LEVEL", "INFO").upper(),
             log_format="text" if reader.text("LOG_FORMAT", "json") == "text" else "json",
             run_budget_sec=reader.integer("RUN_BUDGET_SEC", 1080, 60, 1200),
@@ -142,6 +146,8 @@ class Settings:
             "reranker_top_n": self.reranker_top_n,
             "max_retries": self.max_retries,
             "disable_thinking": self.disable_thinking,
+            "embedding_cache_dir": str(self.embedding_cache_dir or ""),
+            "retrieval_config": self.retrieval_config,
             "run_budget_sec": self.run_budget_sec,
         }
 
