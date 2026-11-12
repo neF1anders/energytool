@@ -33,6 +33,8 @@ _RETRYABLE_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MAX_RETRY_AFTER_SEC = 8.0
 _BASE_BACKOFF_SEC = 0.5
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
+_PROBE_TOKENS = 64
+_THINKING_MIN_TOKENS = 2048
 
 
 class LlmGatewayError(ExternalServiceError):
@@ -99,10 +101,48 @@ class LlmGateway:
         self._client = client or httpx.Client()
         self._sleep = sleep
         self._slots = threading.BoundedSemaphore(settings.max_workers)
-        self._thinking_off = _thinking_off_params(settings)
+        self._thinking_candidates = _thinking_off_candidates(settings)
+        self._thinking_off = self._thinking_candidates[0]
+        self._min_chat_tokens = 0  # > 0, если thinking выключить не удалось
 
     def close(self) -> None:
         self._client.close()
+
+    def calibrate_thinking(self) -> dict[str, Any]:
+        """Подбор параметров выключения thinking на старте процесса: по пробному запросу
+        на кандидата, выбирается первый, при котором ответ непустой и короткий.
+        Ни один не сработал — шлём без параметров и поднимаем лимит токенов, чтобы
+        рассуждение помещалось. Возвращает выбранные параметры (для лога)."""
+        probe: list[ChatMessage] = [{"role": "user", "content": "Ответь одним словом: да или нет?"}]
+        tried: list[dict[str, object]] = []
+        for candidate in self._thinking_candidates:
+            self._thinking_off = candidate
+            try:
+                result = self.chat(
+                    probe, max_tokens=_PROBE_TOKENS, temperature=0.0, retry_empty=False
+                )
+            except LlmGatewayError as exc:
+                tried.append({"params": candidate, "error": str(exc)[:120]})
+                continue
+            tried.append(
+                {"params": candidate, "tokens_out": result.tokens_out, "text": result.text}
+            )
+            if (
+                result.text
+                and result.finish_reason != "length"
+                and result.tokens_out <= _PROBE_TOKENS // 2
+            ):
+                logger.info(
+                    "thinking calibrated", extra={"data": {"chosen": candidate, "tried": tried}}
+                )
+                return candidate
+        self._thinking_off = {}
+        self._min_chat_tokens = _THINKING_MIN_TOKENS
+        logger.warning(
+            "thinking could not be disabled; raising chat token floor",
+            extra={"data": {"min_tokens": _THINKING_MIN_TOKENS, "tried": tried}},
+        )
+        return {}
 
     # --- операции ----------------------------------------------------------------------------
 
@@ -114,25 +154,35 @@ class LlmGateway:
         max_tokens: int | None = None,
         response_format: dict[str, Any] | None = None,
         extra_body: dict[str, Any] | None = None,
+        retry_empty: bool = True,
     ) -> ChatResult:
+        """retry_empty: пустой ответ с finish_reason=length (рассуждение съело лимит)
+        повторяется один раз с лимитом ×4, но не меньше _THINKING_MIN_TOKENS."""
         endpoint = self._settings.llm
+        limit = max(max_tokens or self._settings.max_tokens, self._min_chat_tokens)
         payload: dict[str, Any] = {
             "model": endpoint.model,
             "messages": list(messages),
             "temperature": self._settings.temperature if temperature is None else temperature,
-            "max_tokens": max_tokens or self._settings.max_tokens,
+            "max_tokens": limit,
         }
         if response_format is not None:
             payload["response_format"] = response_format
         if extra_body:
             payload.update(extra_body)
-        response = self._post_chat(payload)
-        result = _parse_chat(response, endpoint.model)
+        result = _parse_chat(self._post_chat(payload), endpoint.model)
         if not result.text:
             logger.warning(
                 "chat returned empty content",
-                extra={"data": {"finish_reason": result.finish_reason, "model": result.model}},
+                extra={"data": {"finish_reason": result.finish_reason, "max_tokens": limit}},
             )
+            if retry_empty and result.finish_reason == "length":
+                payload["max_tokens"] = max(limit * 4, _THINKING_MIN_TOKENS)
+                result = _parse_chat(self._post_chat(payload), endpoint.model)
+                logger.warning(
+                    "chat retried with larger limit",
+                    extra={"data": {"max_tokens": payload["max_tokens"], "ok": bool(result.text)}},
+                )
         return result
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
@@ -276,15 +326,21 @@ class LlmGateway:
         logger.error("llm call failed", extra={"data": call})
 
 
-def _thinking_off_params(settings: Settings) -> dict[str, Any]:
-    """Как выключить thinking Qwen. OpenRouter: reasoning.enabled=false (проверено вживую,
-    2026-11-12: 2 выходных токена вместо ~70–90, chat_template_kwargs он игнорирует).
-    Прокси платформы — предположительно vLLM, у него chat_template_kwargs."""
+_OPENROUTER_THINKING_OFF: dict[str, Any] = {"reasoning": {"enabled": False}}
+_VLLM_THINKING_OFF: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def _thinking_off_candidates(settings: Settings) -> list[dict[str, Any]]:
+    """Варианты выключения thinking Qwen в порядке проверки калибровкой.
+    OpenRouter: reasoning.enabled=false (проверено 2026-11-12: 2 выходных токена вместо
+    ~70–90; chat_template_kwargs он молча игнорирует). Прокси платформы —
+    предположительно vLLM (chat_template_kwargs), но проверяем оба. Последний вариант —
+    без параметров."""
     if not settings.disable_thinking:
-        return {}
+        return [{}]
     if settings.profile is ModelsProfile.OPENROUTER:
-        return {"reasoning": {"enabled": False}}
-    return {"chat_template_kwargs": {"enable_thinking": False}}
+        return [_OPENROUTER_THINKING_OFF, _VLLM_THINKING_OFF, {}]
+    return [_VLLM_THINKING_OFF, _OPENROUTER_THINKING_OFF, {}]
 
 
 def _ms_since(started: float) -> float:

@@ -206,3 +206,45 @@ def test_thinking_params_can_be_turned_off() -> None:
     gateway.chat([{"role": "user", "content": "x"}])
     assert "chat_template_kwargs" not in seen[0]
     assert "reasoning" not in seen[0]
+
+
+def thinking_proxy(seen: list[dict[str, Any]], works_with: str | None) -> Handler:
+    """Прокси, у которого thinking выключается только параметром works_with."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        seen.append(payload)
+        if works_with and works_with in payload:
+            return httpx.Response(200, json=chat_body("да"))
+        if payload["max_tokens"] >= 2048:
+            return httpx.Response(200, json=chat_body("ответ после рассуждения"))
+        return httpx.Response(200, json=chat_body("", finish="length"))
+
+    return handler
+
+
+def test_calibration_picks_working_params_on_platform() -> None:
+    seen: list[dict[str, Any]] = []
+    gateway, _ = make_gateway(thinking_proxy(seen, works_with="reasoning"))
+    assert gateway.calibrate_thinking() == {"reasoning": {"enabled": False}}
+    assert "chat_template_kwargs" in seen[0]
+    gateway.chat([{"role": "user", "content": "x"}])
+    assert seen[-1]["reasoning"] == {"enabled": False}
+
+
+def test_calibration_without_working_params_raises_token_floor() -> None:
+    seen: list[dict[str, Any]] = []
+    gateway, _ = make_gateway(thinking_proxy(seen, works_with=None))
+    assert gateway.calibrate_thinking() == {}
+    result = gateway.chat([{"role": "user", "content": "x"}], max_tokens=300)
+    assert result.text == "ответ после рассуждения"
+    assert seen[-1]["max_tokens"] == 2048
+    assert "reasoning" not in seen[-1] and "chat_template_kwargs" not in seen[-1]
+
+
+def test_empty_length_answer_is_retried_with_bigger_limit() -> None:
+    seen: list[dict[str, Any]] = []
+    gateway, _ = make_gateway(thinking_proxy(seen, works_with=None))
+    result = gateway.chat([{"role": "user", "content": "x"}], max_tokens=300)
+    assert result.text == "ответ после рассуждения"
+    assert [p["max_tokens"] for p in seen] == [300, 2048]

@@ -46,6 +46,7 @@ def ping(container: Container) -> int:
         print(f"ошибка конфигурации: {exc}", file=sys.stderr)
         return 2
     gateway = container.gateway
+    gateway.calibrate_thinking()
     checks: list[tuple[str, bool, Callable[[], str]]] = [
         ("chat", True, lambda: _ping_chat(container)),
         ("embed", False, lambda: f"dim={len(gateway.embed(['проверка связи'])[0])}"),
