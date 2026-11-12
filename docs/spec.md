@@ -1,6 +1,6 @@
 # Ассистент-квалификатор Energytool — спецификация
 
-Статус: v0.4 · 2026-11-12 · M0–M2 готовы. Изменения по ходу разработки помечены **[Mn]**.
+Статус: v0.5 · 2026-11-12 · M0–M3 готовы. Изменения по ходу разработки помечены **[Mn]**.
 Диаграммы: [`docs/diagrams/`](diagrams/README.md) · сущности домена: [`src/energytool/domain/`](../src/energytool/domain/) · порты и use cases: [`src/energytool/application/`](../src/energytool/application/)
 
 ---
@@ -110,6 +110,8 @@ def apply(state: ConversationState, ex: Extraction, registry: ContractRegistry, 
 - `mentions` → `SoftSignal(source="mention")`;
 - `turns_without_progress` сбрасывается, если закрылось хотя бы одно поле активного контракта.
 
+
+Реализация **[M3]**: `apply(...) → Reduction(state, accepted, rejected[(slot_id, reason)], progressed)` — причины отказа (`unknown_slot`, `no_quote`, `quote_mismatch`, `bad_value`, `unit_mismatch`) идут в `TurnTrace.extraction`. Исходное состояние не мутируется. Совпадение цитаты — **stdlib `difflib`** (скользящее окно длиной с цитату, порог 0.85, нормализация регистра, `ё`, пунктуации), поэтому домен без внешних зависимостей и `rapidfuzz` удалён из ядра. Единицы: `млн`/`тыс`, `МВт`/`ГВт` относительно кВт/кВт·ч, «в год» → /12 для месячного объёма, рубли в кВт·ч → `unit_mismatch`. `turns_without_progress` обнуляется, если закрылось любое неконтактное поле (активный контракт на этом шаге ещё не известен). Номер хода (`state.turn`) увеличивает use case, не reducer.
 ### 5.3 Product Scorer — `rules.py`, `scorer.py`
 
 ```python
@@ -150,6 +152,8 @@ P = softmax(score / T) по неисключённым,  T = 2
 
 Priors по сегменту — из `20-portfolio › Навигация по типу компании` (таблица в `rules.py`).
 
+
+Реализация **[M3]** — `domain/rules.py` (`RULES`, `PRIORS`), `domain/scorer.py`. К таблице выше добавлены: `PAIN_BILLS_SOLAR` (+0.5 СЭС), `GOAL_METERING` (+1.5), `GOAL_LOSSES` (+2), `SOLAR_SITE_HYBRID` (+1), `SOLAR_NIGHT_HYBRID` (+1 гибриду при вечернем профиле — демо 14), `SOLAR_SLATE_HYBRID` (исключить), `SOLAR_SLATE_UNKNOWN` (флаг «уточнить возраст»), `OREM_ALREADY_PLATFORM` (+1 платформе), `PHOTO_MANUAL` (+0.5: часть приборов без связи — `20-portfolio › Как продукты связаны`), `HOUSING_LOAD`. Каждое правило и его отрицание покрыты тестом (`tests/domain/test_rules_and_scorer.py`). Priors по сегментам — по `20-portfolio › Навигация по типу компании` (например, склад: СЭС +1.2, платформа +0.4; сетевая: потери +1.2, платформа +1.0, фото +0.8). Тексты правил подставляют значения слотов (`мощность 1 100 кВт…`); флаги (`flag=True`) на балл не влияют.
 ### 5.4 Dialogue Policy — `dialog_policy.py`
 
 ```python
@@ -186,6 +190,14 @@ next_slot = argmax(value); None, если ничего не осталось и�
 ```
 В `mode="batch"` CONTACT не предлагается, а `next_slot` остаётся: эталоны в 2/3 случаев заканчиваются уточняющим вопросом.
 
+
+Реализация **[M3]**:
+- `decide(...)` + отдельная `after_retrieval(decision, below_floor, mode)`: `below_floor` известен только после ретрива (шаг ⑤ после ④), поэтому переход «ответа в базе нет → CONTACT» делается второй функцией; в batch только пометка в `reason`.
+- Порядок проверок в чате: SUBMITTED остаётся; CONTACT + контакты полные → SUBMITTED; `wants_contact`/`Intent.CONTACT` → CONTACT; CONTACT держится до заполнения; `OUT_OF_SCOPE` → CONTACT (+ pinned «Когда требуется специалист»); 8 ходов без прогресса → CONTACT; READY после показанного призыва → NO_CONTACT (клиент продолжил без контакта); NO_CONTACT держится. Затем DISCOVERY/QUALIFY/READY по лидеру и порогу полноты; в batch READY не наступает (остаётся QUALIFY).
+- Гистерезис: прежний лидер сохраняется, пока он кандидат (P ≥ 0.25) и новый не оторвался на `leader_margin`.
+- `contact_complete`: ФИО, компания, телефон (10 цифр, опционально `+7`/`8`), `pd_consent is True`. В CONTACT `next_slot` — первое недостающее из `contact_name → phone → company → pd_consent`.
+- `next_slot`: `value(slot)` по формуле; пул DISCOVERY — общий блок + поля с весом у ≥ 2 продуктов; общие поля без весов (`segment`, `goal`, `pain`) получают +0.5, чтобы бот сначала понял тип клиента и задачу; без кандидатов берутся два лучших продукта доски.
+- `pinned_sections` — id разделов `03-calculation › Какие сведения могут понадобиться › Для <продукта>` (READY/NO_CONTACT) и `02 › Когда требуется специалист` (вне темы); id строятся так же, как в `BuildKnowledgeIndex`.
 ### 5.5 Параметры правил
 
 Пороги (`Thresholds`), коэффициенты скоринга (`ScoringParams`), priors и таблица правил — бизнес-правила квалификации, поэтому живут в domain как типы со значениями по умолчанию. Это единственный источник правды: у каждого значения комментарий со ссылкой на раздел базы или результат eval.
@@ -195,6 +207,8 @@ next_slot = argmax(value); None, если ничего не осталось и�
 - Инфраструктурные параметры (таймауты, `MAX_WORKERS`, бюджет прогона, модели) — в `Settings`, не в domain.
 
 ### 5.6 Brief — `brief.py`
+
+Реализация **[M3]**: `build(state, board, registry, contact, created_at)` — время передаётся аргументом (домен без часов). Кандидаты — top-3 неисключённых с текстами положительных правил и флагами; исключённые — с текстом и разделом базы `EXCLUDE`-правила; поля — без контактных, по `opros_item`, затем по порядку реестра; `missing` — обязательные поля кандидатов, не закрытые (`DECLINED` = закрыто); документы — `DOCUMENT`-поля кандидатов, у которых нет статуса `have`. `contact_from_state(state)` собирает `Contact` из контактных слотов.
 
 `build(state, board, registry, contact) -> Brief`. Кандидаты с причинами (тексты правил), исключённые с причинами, поля в порядке пунктов опросного листа, пробелы, документы. Текст и JSON рендерит адаптер. LLM не используется.
 
@@ -438,7 +452,7 @@ GET  /healthz
 
 | Группа | Состав | Куда идёт |
 |---|---|---|
-| `[project.dependencies]` | `httpx`, `numpy`, `bm25s`, `rapidfuzz` (версии = разрешённый список; tiktoken убран, см. 7.4) **[M0]** | ядро, ZIP, Docker |
+| `[project.dependencies]` | `httpx`, `numpy`, `bm25s` (версии = разрешённый список; tiktoken убран, см. 7.4 **[M0]**; rapidfuzz убран — reducer на `difflib`, см. 5.2 **[M3]**) | ядро, ZIP, Docker |
 | extra `web` | `fastapi`, `uvicorn`, `SQLAlchemy`, `pydantic`, `python-dotenv` | Docker |
 | group `dev` | `pytest`, `ruff`, `mypy` | локально, CI |
 | group `local-models` | `sentence-transformers`, `torch` (CPU) | только профиль `openrouter` с локальными моделями |
@@ -507,7 +521,7 @@ Git: ветки `feat/…`, `fix/…`; один PR — один этап раз�
 | M0 ✅ | Каркас: `pyproject.toml` + `uv.lock`, слои, `bootstrap.py`, `config.py` с профилями, LLM Gateway, логи, ruff + mypy + pytest | `uv run pytest` зелёный, gateway отвечает на профиле `openrouter` (`uv run --env-file .env python -m energytool ping`) |
 | M1 ✅ | База знаний: `BuildKnowledgeIndex`, `RetrieveKnowledge` + стадии, адаптеры kb/index/llm, `eval/retrieval` | recall@4 и MRR на FAQ-наборе посчитаны для 2+ конфигураций |
 | M2 ✅ | Наивный путь этапа 1: AnswerQuestion = ретрив + Responder, сборка ZIP | первый сабмит, локальный судья против sample_submission |
-| M3 | Domain-сервисы: reducer, rules, scorer, dialog_policy, brief + тесты | все переходы автомата покрыты |
+| M3 ✅ | Domain-сервисы: reducer, rules, scorer, dialog_policy, brief + тесты | все переходы автомата покрыты |
 | M4 | Extractor + полный HandleTurn, batch на полном конвейере | сравнение M2 vs M4 на eval ответов |
 | M5 | HTTP, SQLite, виджет, режим отладки | путь «вопрос → заявка» проходит руками |
 | M6 | SubmitLead, бриф, мок CRM, страница заявок | бриф хлебозавода совпадает с ожидаемым |
