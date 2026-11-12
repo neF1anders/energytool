@@ -504,6 +504,9 @@ class ContractRegistry:
         if len(ids) != len(set(ids)):
             raise ValueError("slot ids must be unique")
 
+    def has(self, slot_id: str) -> bool:
+        return any(spec.id == slot_id for spec in self.slots)
+
     def get(self, slot_id: str) -> SlotSpec:
         for spec in self.slots:
             if spec.id == slot_id:
