@@ -97,7 +97,8 @@ def test_messages_include_examples_history_and_evidence() -> None:
     last = messages[-1]["content"]
     assert "[1] orem#порог" in last
     assert "Клиент: Мы завод\nКонсультант: Какая мощность?" in last
-    assert last.endswith("Вопрос клиента: Нам подходит опт?")
+    assert "Вопрос клиента: Нам подходит опт?" in last
+    assert "только если без него нельзя ответить" in last
 
 
 def test_writer_uses_llm_and_cleans() -> None:

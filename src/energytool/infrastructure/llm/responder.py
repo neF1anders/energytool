@@ -19,12 +19,18 @@ from energytool.domain.reply import Reply, ReplyPlan
 from energytool.domain.state import Message, Role
 from energytool.infrastructure.llm.gateway import ChatMessage, LlmGateway, LlmGatewayError
 from energytool.infrastructure.llm.prompts import (
+    CONTACT_CTA,
     FALLBACK_NO_EVIDENCE,
     FALLBACK_TAIL,
+    RESPONDER_ACK,
+    RESPONDER_ASK,
+    RESPONDER_ASK_WHY,
     RESPONDER_EXAMPLES,
+    RESPONDER_NO_ASK,
     RESPONDER_SYSTEM,
     RESPONDER_USER,
     RESPONDER_VERSION,
+    TEMPLATE_ACK_EMPTY,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +43,7 @@ REPLY_MAX_TOKENS = 450
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 _MARKDOWN = re.compile(r"(\*\*|__|`|^#+\s*|^\s*[-*•]\s+|^\s*\d+[.)]\s+)", re.MULTILINE)
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
+_ORIGIN_NOTE = {"pinned": " (ограничения продукта: не утверждай обратного)"}
 
 
 class LlmReplyWriter:
@@ -46,8 +53,14 @@ class LlmReplyWriter:
 
     def write(self, plan: ReplyPlan, history: Sequence[Message]) -> Reply:
         evidence_ids = tuple(e.chunk.id for e in plan.evidence)
-        if plan.template_only or not plan.answer_question:
-            return Reply(text=template_reply(plan), used_llm=False, evidence_ids=evidence_ids)
+        if not plan.answer_question:
+            return Reply(text=plan_template(plan), used_llm=False, evidence_ids=evidence_ids)
+        if plan.template_only:
+            return Reply(
+                text=_with_cta(template_reply(plan), plan),
+                used_llm=False,
+                evidence_ids=evidence_ids,
+            )
         try:
             result = self._gateway.chat(
                 build_messages(plan, history),
@@ -55,11 +68,19 @@ class LlmReplyWriter:
             )
         except LlmGatewayError as exc:
             logger.error("responder degraded to template: %s", exc)
-            return Reply(text=template_reply(plan), used_llm=False, evidence_ids=evidence_ids)
+            return Reply(
+                text=_with_cta(template_reply(plan), plan),
+                used_llm=False,
+                evidence_ids=evidence_ids,
+            )
         text = clean_reply(result.text, HARD_WORD_LIMIT)
         if not text:
             logger.warning("responder returned empty text, using template")
-            return Reply(text=template_reply(plan), used_llm=False, evidence_ids=evidence_ids)
+            return Reply(
+                text=_with_cta(template_reply(plan), plan),
+                used_llm=False,
+                evidence_ids=evidence_ids,
+            )
         unsupported = unsupported_numbers(text, plan)
         logger.info(
             "reply written",
@@ -68,11 +89,50 @@ class LlmReplyWriter:
                     "prompt": RESPONDER_VERSION,
                     "words": len(text.split()),
                     "finish": result.finish_reason,
+                    "ask": plan.ask.slot.id if plan.ask else None,
+                    "offer_contact": plan.offer_contact,
                     "unsupported_numbers": unsupported,
                 }
             },
         )
-        return Reply(text=text, used_llm=True, evidence_ids=evidence_ids)
+        return Reply(text=_with_cta(text, plan), used_llm=True, evidence_ids=evidence_ids)
+
+
+def plan_template(plan: ReplyPlan) -> str:
+    """Ход без вопроса клиента (он отвечал на анкету): подтверждение + следующий вопрос
+    анкеты + призыв к заявке — без LLM (spec §8.3)."""
+    parts = [_sentence(plan.acknowledge[0]) if plan.acknowledge else TEMPLATE_ACK_EMPTY]
+    if plan.ask is not None:
+        parts.append(plan.ask.ask)
+    text = " ".join(parts)
+    return _with_cta(text, plan) if plan.offer_contact or plan.ask is None else text
+
+
+def _with_cta(text: str, plan: ReplyPlan) -> str:
+    if not plan.offer_contact or CONTACT_CTA in text:
+        return text
+    return f"{text} {CONTACT_CTA}"
+
+
+def _sentence(text: str) -> str:
+    text = text.strip()
+    return (
+        (text[:1].upper() + text[1:] + ("" if text.endswith((".", "!", "?")) else "."))
+        if text
+        else ""
+    )
+
+
+def guidance(plan: ReplyPlan) -> str:
+    extra = ""
+    if plan.acknowledge:
+        extra += RESPONDER_ACK.format(facts="; ".join(plan.acknowledge))
+    if plan.ask is not None:
+        why = RESPONDER_ASK_WHY.format(why=plan.ask.why) if plan.ask.why else ""
+        extra += RESPONDER_ASK.format(ask=plan.ask.ask, why=why)
+    else:
+        extra += RESPONDER_NO_ASK
+    return extra
 
 
 def build_messages(plan: ReplyPlan, history: Sequence[Message]) -> list[ChatMessage]:
@@ -91,7 +151,7 @@ def build_messages(plan: ReplyPlan, history: Sequence[Message]) -> list[ChatMess
             "content": RESPONDER_USER.format(
                 evidence=format_evidence(plan.evidence),
                 history=format_history(history),
-                question=plan.answer_question or "",
+                question=(plan.answer_question or "") + guidance(plan),
             ),
         }
     )
@@ -102,7 +162,8 @@ def format_evidence(evidence: Sequence[Evidence]) -> str:
     if not evidence:
         return "(ничего не найдено)"
     return "\n\n".join(
-        f"[{i}] {e.chunk.path}\n{_body(e)[:EVIDENCE_CHARS]}" for i, e in enumerate(evidence, 1)
+        f"[{i}] {e.chunk.path}{_ORIGIN_NOTE.get(e.origin, '')}\n{_body(e)[:EVIDENCE_CHARS]}"
+        for i, e in enumerate(evidence, 1)
     )
 
 
