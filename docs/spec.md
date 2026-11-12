@@ -1,6 +1,6 @@
 # Ассистент-квалификатор Energytool — спецификация
 
-Статус: v0.3 · 2026-11-12 · M0–M1 готовы. Изменения по ходу разработки помечены **[Mn]**.
+Статус: v0.4 · 2026-11-12 · M0–M2 готовы. Изменения по ходу разработки помечены **[Mn]**.
 Диаграммы: [`docs/diagrams/`](diagrams/README.md) · сущности домена: [`src/energytool/domain/`](../src/energytool/domain/) · порты и use cases: [`src/energytool/application/`](../src/energytool/application/)
 
 ---
@@ -236,6 +236,12 @@ next_slot = argmax(value); None, если ничего не осталось и�
 
 Бюджет прогона: параллельно по `MAX_WORKERS`; при `elapsed > 15 мин` переключаемся на быстрый путь (без Extractor: поиск по последней реплике + Responder); при `elapsed > 18 мин` — ответ из лучшего Evidence без LLM. Пустых ответов быть не должно.
 
+Реализация M2 (наивный путь) **[M2]** — `application/answer_question.py`:
+- `application/transcript.py`: метки `Пользователь/Клиент/User` и `Ассистент/Консультант/Бот/Assistant` без учёта регистра, строка без метки продолжает реплику; без меток — один вопрос.
+- Запрос без Extractor — `knowledge_request.query_from_history`: последняя реплика клиента (вес 1.0), предыдущие реплики клиента одной строкой (0.5), последний вопрос ассистента — `role="context"` для реранкера. В M4 его заменяет `build_query`, он остаётся как деградация.
+- Режимы `AnswerMode.FULL` / `NO_LLM` (ретрив + шаблон). Ошибка ретрива → пустой Evidence + ответ (`retrieval_failed`), любая ошибка кейса в раннере → запасной ответ. `TurnTrace` на каждый кейс: тайминги, вызовы LLM, Evidence, деградации.
+- Бюджет M2: один порог `RUN_BUDGET_SEC` (1080 с) → `NO_LLM`; порог «быстрого пути без Extractor» (15 мин) появится в M4 вместе с Extractor.
+
 ### 6.4 SubmitLead
 
 Валидация контактов (телефон по маске, согласие обязательно) → `brief.build` → рендер текста и JSON → `LeadSink.send` → запись в `leads`. Бриф уходит синхронно с заявкой: перезвон быстрый.
@@ -351,6 +357,13 @@ httpx-клиент к OpenAI-совместимому прокси: `chat/comple
 ### 8.3 Responder — `llm/responder.py`
 Шаблон без LLM, если вопроса клиента нет: `acknowledge + ask(+why)`. Иначе LLM: роль консультанта Energytool, «мы», факты только из Evidence, формат «прямой ответ → 1–2 факта → оговорка → один вопрос по плану», 30–70 слов, до 150. Few-shot: 3–4 пары из демо. Пост-проверка кодом: один вопросительный знак максимум в части вопроса, длина, нет чисел, которых нет в Evidence (regex по числам).
 
+Реализация **[M2]** (`llm/responder.py`, `llm/prompts.py`, версия `responder-v1`):
+- Few-shot — **2 синтетических примера** (вопрос не по профилю бизнеса и вопрос вне компетенции), а не пары из демо: демо-эталоны — данные хакатона и в код/git не копируются.
+- В промпт идут до 4 фрагментов по ≤ 1800 символов (`[i] путь\nтекст`), до 6 предыдущих реплик, вопрос клиента; `max_tokens=450`.
+- Пост-обработка: снятие markdown, одна строка, обрезка по последнему целому предложению на 150 словах; числа ответа, которых нет во фрагментах и вопросе, пишутся в лог (`unsupported_numbers`) — пока без перегенерации.
+- Шаблон без LLM (`template_reply`): первые два предложения связного текста лучшего фрагмента (без таблиц и списков) + просьба уточнить или оставить заявку; без Evidence — честный отказ со специалистом. Используется при ошибке/пустом ответе LLM и в `NO_LLM`.
+- **Thinking**: у Qwen на OpenRouter `chat_template_kwargs` игнорируется — ответ пустой (`finish_reason=length`), всё уходит на рассуждение. Поэтому gateway на старте прогона калибрует параметры (`calibrate_thinking`: пробный запрос на каждый вариант — `chat_template_kwargs`, `reasoning.enabled=false`, без параметров — выбирается первый, давший короткий непустой ответ); если ни один не сработал — без параметров и пол `max_tokens=2048`. Плюс страховка на каждый вызов: пустой ответ с `length` повторяется с лимитом ×4 (≥ 2048).
+
 ### 8.4 Хранилище — `storage/`
 SQLite через SQLAlchemy Core:
 ```
@@ -399,6 +412,8 @@ GET  /healthz
 ### 9.3 Batch — `interface/batch/run.py`
 Читает `DATA_DIR/questions.csv`, строит индекс, гонит `AnswerQuestion` параллельно, пишет `submission.csv` (`id,answer`, UTF-8, кавычки, без переносов строк, ≤ 10 000 символов, без пустых и дублей). Атомарная запись, код возврата 0.
 
+Реализация **[M2]**: `interface/batch/submission.py` (поиск `questions.csv`/`train.csv` в `DATA_DIR`, `cwd/DATA_DIR`, `cwd`, каталоге скрипта; запись через временный файл и `os.replace`; запасной ответ для пустых), `interface/batch/run.py` (`Deadline`, пул потоков, `log_context(qid=…)`, прогресс в stdout каждые 10 вопросов, итог `batch summary`: время, p50/p95, режимы, число запасных ответов). Даже если всё упало до ответов, CSV пишется с запасными ответами для всех id.
+
 ## 10. Конфигурация
 
 Профили окружения (`MODELS_PROFILE`):
@@ -438,6 +453,7 @@ GET  /healthz
 - `tests/live/` (маркер `live`, по умолчанию пропускаются): те же сценарии на профиле `openrouter` — `uv run pytest -m live`. Нужен `.env` с ключом.
 - `eval/retrieval/` — раздел 7.6.
 - `eval/answers/`: локальный pairwise-судья (Qwen через OpenRouter) против `sample_submission` на 18 демо + синтетике; метрики как у платформы: 0.7·MatchRate + 0.3·WinRate.
+  **[M2]** Стенд: `uv run --env-file .env python -m eval.answers --team <submission.csv>`; судья `judge-v1` (промпт наш — платформенный неизвестен, цифры для сравнения версий между собой). Baseline — учебный пример организаторов, прогнанный на демо локально (`eval/data/baseline/`; на OpenRouter ему нужен явный `LLM_BASE_URL` и `reasoning.enabled=false`, иначе пустые ответы). Санити-проверка: baseline против себя = 0.500. Результат M2 (наивный путь, 18 демо): **Score 0.896**, MatchRate 0.875, WinRate 0.944 (17/1/0). Единственный проигрыш — demo 15 («с чего начать»: ответ общий, без связки «платформа + фото»).
 - `eval/dialog/`: 20–30 персон с эталонной анкетой (легенда хлебозавода — первая), клиента играет LLM с «не знаю», путаницей терминов и сменой темы. Метрики: полнота и точность полей, ходов до READY, доля ложных полей, верный ли лидер.
 
 ## 13. Сборка сабмита
@@ -448,6 +464,13 @@ GET  /healthz
 - в ZIP идут только модули, достижимые из `interface/batch/run.py` (без `http/`, `storage/`, `web/`);
 - `solution.py` + `requirements.txt` (подмножество разрешённого списка);
 - тест: распаковать в пустой каталог, запустить на демо с фейковым прокси, сверить формат `submission.csv`.
+
+Реализация **[M2]**: `uv run python tools/build_submission.py` → `dist/submission.zip` (в `.gitignore`).
+- Достижимые модули ищутся по AST от `solution.py` (в т.ч. `from energytool.a import b`, где `b` — подмодуль); пакет `a/__init__.py` → `energytool__a.py`; относительный импорт — ошибка сборки; после переписывания проверяется, что `from energytool.` не осталось.
+- `requirements.txt` = прямые зависимости `[project.dependencies]` (все с `==`), каждая сверяется с `materials/data/requirements.txt`; транзитивных нет — их ставит pip платформы.
+- Сейчас: 36 модулей + `solution.py` + `requirements.txt`, ~61 КБ.
+- `tests/integration/test_submission_zip.py`: сборка → распаковка в пустой каталог → запуск `python -E -s solution.py` на игрушечной базе с фейковым OpenAI-совместимым прокси (штатный и «прокси отдаёт 500») → проверка формата.
+- Ручная проверка «как на платформе»: распаковать ZIP и запустить `uv run --no-project --with-requirements requirements.txt python solution.py` — одноразовое окружение только с зависимостями из ZIP.
 
 Docker: `Dockerfile` (python:3.11-slim, без компиляторов), `compose.yaml` (backend + статика виджета), `.dockerignore` (материалы и база знаний не попадают в образ), команда запуска одна.
 
@@ -483,7 +506,7 @@ Git: ветки `feat/…`, `fix/…`; один PR — один этап раз�
 |---|---|---|
 | M0 ✅ | Каркас: `pyproject.toml` + `uv.lock`, слои, `bootstrap.py`, `config.py` с профилями, LLM Gateway, логи, ruff + mypy + pytest | `uv run pytest` зелёный, gateway отвечает на профиле `openrouter` (`uv run --env-file .env python -m energytool ping`) |
 | M1 ✅ | База знаний: `BuildKnowledgeIndex`, `RetrieveKnowledge` + стадии, адаптеры kb/index/llm, `eval/retrieval` | recall@4 и MRR на FAQ-наборе посчитаны для 2+ конфигураций |
-| M2 | Наивный путь этапа 1: AnswerQuestion = ретрив + Responder, сборка ZIP | первый сабмит, локальный судья против sample_submission |
+| M2 ✅ | Наивный путь этапа 1: AnswerQuestion = ретрив + Responder, сборка ZIP | первый сабмит, локальный судья против sample_submission |
 | M3 | Domain-сервисы: reducer, rules, scorer, dialog_policy, brief + тесты | все переходы автомата покрыты |
 | M4 | Extractor + полный HandleTurn, batch на полном конвейере | сравнение M2 vs M4 на eval ответов |
 | M5 | HTTP, SQLite, виджет, режим отладки | путь «вопрос → заявка» проходит руками |
