@@ -327,6 +327,14 @@ next_slot, need_facts, evidence[{section_id, origin, score}], below_floor, fallb
 ```
 На прогон этапа 1: общее время против 20 минут, p50/p95 на вопрос, доля быстрого пути, число пустых ответов (должно быть 0). Телефоны и e-mail в логах маскируются.
 
+Логи — `infrastructure/logs.py` **[M0]**:
+- stdlib `logging`, вывод в stderr, `LOG_FORMAT=json` (одна запись — одна JSON-строка) или `text` для локальной отладки, уровень — `LOG_LEVEL`;
+- domain не логирует, его решения попадают в `TurnTrace`; application и infrastructure пишут в `logging.getLogger(__name__)`, структурированные поля — через `extra={"data": {...}}`;
+- контекст (`session_id`, `turn`, `qid`) задаёт interface через `log_context(...)`, он попадает во все записи блока;
+- `log_duration(logger, event)` замеряет шаг и пишет `ms`; при исключении пишет ERROR с traceback;
+- фильтр на хендлере маскирует телефоны (`+7***-**-NN`), e-mail (`a***@domain`), `sk-…` и `Bearer …` в сообщениях, полях и traceback — значит, и в логах сторонних библиотек; `httpx`/`httpcore` понижены до WARNING;
+- `infrastructure/telemetry.py` (`LogTelemetry`) пишет `TurnTrace` событием `turn_trace`.
+
 ## 9. Interface
 
 ### 9.1 HTTP — FastAPI
