@@ -1,6 +1,6 @@
 # Ассистент-квалификатор Energytool — спецификация
 
-Статус: черновик v0.1 для ревью · 2026-11-12
+Статус: v0.2 · 2026-11-12 · M0 готов (кроме живой проверки gateway). Изменения по ходу разработки помечены **[Mn]**.
 Диаграммы: [`docs/diagrams/`](diagrams/README.md) · сущности домена: [`src/energytool/domain/`](../src/energytool/domain/) · порты и use cases: [`src/energytool/application/`](../src/energytool/application/)
 
 ---
@@ -283,7 +283,7 @@ next_slot = argmax(value); None, если ничего не осталось и�
 - Dense: bge-m3 через `Embedder`, косинус в numpy по разрешённым id.
 - Rerank: Qwen3 Reranker 8B через `Reranker`; лучший скор ниже `min_rerank_score` → `below_floor=True`. `reranker=None` → ранжирование по fused (деградация, эксперименты).
 - Fallback: recall + fuse + rerank по всей базе без области, `fallback_k=2` — страховка от ошибки роутинга.
-- Pack: дедупликация, порядок `by_id → pinned → ranked → fallback`, обрезка по `max_tokens` (tiktoken), `scope_mass`.
+- Pack: дедупликация, порядок `by_id → pinned → ranked → fallback`, обрезка по `max_tokens` (оценка токенов `len(text) / 3.5` без tiktoken: ему нужна сеть для загрузки словаря, а в контейнере проверки её может не быть; `Chunk.tokens` считается так же), `scope_mass`. **[M0]**
 
 ### 7.5 Индексация — `BuildKnowledgeIndex`
 
@@ -387,12 +387,12 @@ GET  /healthz
 
 | Группа | Состав | Куда идёт |
 |---|---|---|
-| `[project.dependencies]` | `httpx`, `numpy`, `bm25s`, `rapidfuzz`, `tiktoken` | ядро, ZIP, Docker |
+| `[project.dependencies]` | `httpx`, `numpy`, `bm25s`, `rapidfuzz` (версии = разрешённый список; tiktoken убран, см. 7.4) **[M0]** | ядро, ZIP, Docker |
 | extra `web` | `fastapi`, `uvicorn`, `SQLAlchemy`, `pydantic`, `python-dotenv` | Docker |
 | group `dev` | `pytest`, `ruff`, `mypy` | локально, CI |
 | group `local-models` | `sentence-transformers`, `torch` (CPU) | только профиль `openrouter` с локальными моделями |
 
-Версии ядра совпадают с разрешённым `requirements.txt` организаторов. `requirements.txt` для ZIP генерируется: `uv export --no-dev --no-hashes --no-emit-project`, затем `tools/check_requirements.py` сверяет его с разрешённым списком. Pydantic в ядре не используется: домен на dataclasses.
+Версии ядра совпадают с разрешённым `requirements.txt` организаторов. `requirements.txt` для ZIP — только прямые зависимости ядра с `==` из `pyproject.toml`: транзитивных (`anyio`, `certifi`, `h11`…) нет в разрешённом списке, их ставит pip платформы **[M0]**. `tools/check_requirements.py` сверяет файл с разрешённым списком. Pydantic в ядре не используется: домен на dataclasses.
 
 ## 12. Тесты и eval
 
@@ -420,12 +420,12 @@ Docker: `Dockerfile` (python:3.11-slim, без компиляторов), `compo
 Окружение и команды:
 - Только `uv`: `uv sync` — установка, `uv add <pkg>` / `uv add --group dev <pkg>` — новая зависимость, `uv run …` — любой запуск. `pip install` и ручная правка `requirements.txt` запрещены.
 - Новая зависимость ядра допустима, только если она есть в разрешённом списке организаторов (иначе не попадёт в ZIP).
-- Проверка перед коммитом: `uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run pytest`.
+- Проверка перед коммитом: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest` (mypy берёт `src` и `tests` из `pyproject.toml`) **[M0]**.
 
 Код:
 - Слои по разделу 4; импорт против направления зависимостей — ошибка ревью. Домен без IO, application — IO только через порты.
 - Только абсолютные импорты `from energytool…` (ruff `TID252`), иначе ломается плоская сборка ZIP.
-- Сущности и DTO — dataclasses `frozen=True, slots=True`; типы обязательны, `mypy --strict` для `domain` и `application`.
+- Сущности и DTO — dataclasses `frozen=True, slots=True`; типы обязательны, `mypy --strict` для всего `src` (в тестах разрешены функции без аннотаций) **[M0]**.
 - LLM вызывается только из `infrastructure/llm`; промпты — в `llm/prompts.py`.
 - Бизнес-параметры — в domain (раздел 5.5), инфраструктурные — в `Settings`.
 - Тексты и комментарии на русском, идентификаторы на английском.
@@ -445,7 +445,7 @@ Git: ветки `feat/…`, `fix/…`; один PR — один этап раз�
 
 | # | Шаг | Готово, когда |
 |---|---|---|
-| M0 | Каркас: `pyproject.toml` + `uv.lock`, слои, `bootstrap.py`, `config.py` с профилями, LLM Gateway, ruff + mypy + pytest | `uv run pytest` зелёный, gateway отвечает на профиле `openrouter` |
+| M0 ✅ | Каркас: `pyproject.toml` + `uv.lock`, слои, `bootstrap.py`, `config.py` с профилями, LLM Gateway, логи, ruff + mypy + pytest | `uv run pytest` зелёный, gateway отвечает на профиле `openrouter` (`uv run --env-file .env python -m energytool ping`) |
 | M1 | База знаний: `BuildKnowledgeIndex`, `RetrieveKnowledge` + стадии, адаптеры kb/index/llm, `eval/retrieval` | recall@4 и MRR на FAQ-наборе посчитаны для 2+ конфигураций |
 | M2 | Наивный путь этапа 1: AnswerQuestion = ретрив + Responder, сборка ZIP | первый сабмит, локальный судья против sample_submission |
 | M3 | Domain-сервисы: reducer, rules, scorer, dialog_policy, brief + тесты | все переходы автомата покрыты |
