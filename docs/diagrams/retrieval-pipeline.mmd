@@ -1,0 +1,39 @@
+%% Use cases базы знаний (application): BuildKnowledgeIndex на старте и RetrieveKnowledge на запрос.
+%% RetrieveKnowledge(query: KnowledgeQuery) -> KnowledgeResult; стадии — чистые функции.
+flowchart LR
+  classDef stage fill:#e9effc,stroke:#2a5bd7,color:#1b1f27
+  classDef port fill:#fbf0dc,stroke:#b25e00,color:#1b1f27
+  classDef data fill:#efeafc,stroke:#6b4fd0,color:#1b1f27
+  classDef io fill:#eceef2,stroke:#6f7785,color:#1b1f27
+
+  subgraph indexing["BuildKnowledgeIndex (на старте прогона)"]
+    direction LR
+    zip[("knowledge-base.zip")]:::io --> load["load<br/><i>KnowledgeSource</i>"]:::stage --> split["split по ## / ###<br/><i>SectionSplitter</i>"]:::stage --> tag["tag: scope, kind<br/><i>SectionTagger</i>"]:::stage --> emb["embed батчами"]:::stage --> build["build<br/><i>IndexFactory</i>"]:::stage
+  end
+
+  subgraph query["RetrieveKnowledge: KnowledgeQuery → KnowledgeResult"]
+    direction LR
+    req["build_query(state) →<br/>(TextSnippet…, ScopeSnippet,<br/>BoostSnippet, PinSnippet,<br/>IdSnippet, BudgetSnippet)"]:::io
+    req --> parse["parse"]:::stage --> byid["by_id"]:::stage --> scope["scope<br/>scope IN кандидаты"]:::stage
+    scope --> lex["recall: BM25"]:::stage
+    scope --> den["recall: dense"]:::stage
+    lex --> fuse["fuse: RRF<br/>top recall_k"]:::stage
+    den --> fuse
+    fuse --> boost["boost"]:::stage --> rr["rerank<br/>top_k, floor"]:::stage --> pin["pin"]:::stage --> fb["fallback<br/>вся база, fallback_k"]:::stage --> pack["pack<br/>dedupe, бюджет,<br/>scope_mass"]:::stage --> out["KnowledgeResult<br/>Evidence[]"]:::io
+  end
+
+  store[("ChunkStore")]:::data
+  lexidx[("LexicalIndex")]:::data
+  vecidx[("VectorIndex")]:::data
+  embp["Embedder"]:::port
+  rrp["Reranker"]:::port
+
+  build --> store & lexidx & vecidx
+  emb -.-> embp
+  scope -.-> store
+  pin -.-> store
+  byid -.-> store
+  lex -.-> lexidx
+  den -.-> embp
+  den -.-> vecidx
+  rr -.-> rrp

@@ -1,0 +1,20 @@
+%% C4, уровень 1: контекст системы
+C4Context
+  title Ассистент-квалификатор Energytool — контекст
+
+  Person(client, "Клиент", "Посетитель сайта Energytool: МСБ, энергетик, СНТ, сеть")
+  Person(manager, "Менеджер пресейла", "Получает заявку и бриф, звонит с расчётом")
+  Person(team, "Команда", "Отладка, eval, аналитика диалогов")
+
+  System(assistant, "Ассистент-квалификатор", "Отвечает по базе знаний, ведёт к продукту, заполняет опросный лист, отдаёт бриф")
+
+  System_Ext(platform, "Платформа хакатона", "Запускает solution.py в Docker: DATA_DIR + прокси моделей, LLM-судья")
+  System_Ext(models, "Прокси моделей", "Qwen 27B, bge-m3, Qwen3 Reranker 8B (OpenAI-совместимый API)")
+  System_Ext(crm, "CRM (мок)", "Принимает заявку и бриф по webhook")
+
+  Rel(client, assistant, "Пишет в чат на сайте")
+  Rel(assistant, models, "chat/completions, embeddings, rerank", "HTTPS")
+  Rel(assistant, crm, "Заявка + бриф", "webhook JSON")
+  Rel(crm, manager, "Показывает заявку")
+  Rel(platform, assistant, "Запускает ядро на questions.csv")
+  Rel(team, assistant, "Режим отладки, трассы")

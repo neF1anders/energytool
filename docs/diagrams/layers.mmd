@@ -1,0 +1,34 @@
+%% Чистые слои и направление зависимостей. Стрелка = «импортирует».
+flowchart LR
+  classDef layer fill:#e9effc,stroke:#2a5bd7,color:#1b1f27
+  classDef entry fill:#fde8e9,stroke:#e30613,color:#1b1f27
+
+  subgraph interface["interface"]
+    http["http/ FastAPI"]:::entry
+    batchcli["batch/ solution entry"]:::entry
+    web["web/ widget (static)"]:::entry
+  end
+  subgraph app["application"]
+    usecases["use cases<br/>handle_turn, answer_question,<br/>submit_lead"]:::layer
+    know["use cases базы знаний<br/>retrieve_knowledge + стадии,<br/>build_index, knowledge_request"]:::layer
+    ports["ports.py<br/>FactExtractor, ReplyWriter,<br/>Embedder, Reranker, ChunkStore,<br/>LexicalIndex, VectorIndex, IndexFactory,<br/>KnowledgeSource, Splitter, Tagger,<br/>SessionRepo, LeadSink, Telemetry, Clock"]:::layer
+  end
+  subgraph domain["domain (без IO)"]
+    entities["сущности: slots, contract,<br/>state, extraction, scoring,<br/>policy, knowledge, reply, lead"]:::layer
+    services["сервисы: reducer, scorer,<br/>policy, brief, rules"]:::layer
+  end
+  subgraph infra["infrastructure"]
+    llm["llm/ gateway, extractor,<br/>responder, prompts,<br/>embedder, reranker"]:::layer
+    kb["kb/ loader, splitter,<br/>tagmap (структура базы)"]:::layer
+    index["index/ memory store,<br/>bm25s, numpy vectors"]:::layer
+    storage["storage/ sqlite, crm webhook,<br/>telemetry jsonl"]:::layer
+  end
+  boot["bootstrap.py<br/>composition root"]:::entry
+
+  interface --> app
+  app --> domain
+  infra --> app
+  infra --> domain
+  boot --> interface
+  boot --> infra
+  boot --> app

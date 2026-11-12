@@ -1,0 +1,82 @@
+%% C4, уровень 2–3: контейнеры и компоненты бэкенда (то, что было на макете).
+%% Референс раскладки: c4-containers.mockup.png / c4-containers.mockup.html.
+%% Ретрив — use case application (Retrieve Knowledge), как остальные шаги хода;
+%% запрос из состояния собирает Knowledge Request, индексы и модели — за портами.
+%% Обозначения: code — компонент-код, llm — вызывает LLM, store — данные, ext — внешнее.
+flowchart TB
+  classDef person fill:#fde8e9,stroke:#e30613,color:#1b1f27
+  classDef code fill:#e9effc,stroke:#2a5bd7,color:#1b1f27
+  classDef core fill:#e9effc,stroke:#2a5bd7,stroke-width:3px,color:#1b1f27
+  classDef llm fill:#fbf0dc,stroke:#b25e00,color:#1b1f27
+  classDef store fill:#efeafc,stroke:#6b4fd0,color:#1b1f27
+  classDef ext fill:#eceef2,stroke:#6f7785,color:#1b1f27
+
+  client(["Клиент<br/><i>посетитель сайта</i>"]):::person
+  manager(["Менеджер<br/><i>пресейл</i>"]):::person
+  widget["Веб-виджет чата<br/><i>[Container: JS, SSE]</i><br/>чат, «Новый диалог», отладка"]:::ext
+  batch["solution.py<br/><i>[Container: батч этапа 1]</i><br/>questions.csv → submission.csv"]:::ext
+  crm["CRM (мок)<br/><i>[External]</i>"]:::ext
+
+  subgraph backend["Backend API — Container: Python 3.11, FastAPI"]
+    direction TB
+    chatapi["Chat API<br/><i>[interface · FastAPI]</i><br/>сессии, SSE, /leads, /debug"]:::code
+    controller["Turn Controller<br/><i>[application · use case]</i><br/>конвейер ①–⑦, бюджет хода"]:::core
+    sessions[("Session Store<br/><i>[SQLite]</i><br/>sessions, messages,<br/>state_snapshots, leads, traces")]:::store
+    brief["Brief Renderer<br/><i>[domain + шаблон]</i><br/>текст + JSON из состояния"]:::code
+
+    extractor["Extractor<br/><i>[LLM #1 · JSON-схема]</i><br/>intent, поля с цитатой,<br/>упоминания, запрос"]:::llm
+    reducer["State Reducer<br/><i>[domain]</i><br/>цитата, единицы, правки"]:::code
+    scorer["Product Scorer<br/><i>[domain · правила]</i><br/>prior + правила + затухание → softmax"]:::code
+    policy["Dialogue Policy<br/><i>[domain · автомат]</i><br/>поиск?, next_slot, READY"]:::code
+    responder["Responder<br/><i>[LLM #2 или шаблон]</i><br/>ответ ~40 слов + 1 вопрос"]:::llm
+
+    registry[("Contract Registry<br/><i>[domain · код]</i><br/>49 полей, 6 блоков")]:::store
+    rules[("Rule Table<br/><i>[domain · код]</i><br/>~30 правил со ссылкой на базу")]:::store
+    kreq["Knowledge Request<br/><i>[application · функция]</i><br/>state → KnowledgeQuery<br/>(тексты, область, буст, pin)"]:::code
+    gateway["LLM Gateway<br/><i>[infrastructure · httpx]</i><br/>ретраи, таймауты, семафор"]:::code
+    telemetry["Debug & Telemetry<br/><i>[infrastructure]</i><br/>время шагов, правила, чанки"]:::code
+
+    retrieve["Retrieve Knowledge<br/><i>[application · use case]</i><br/>scope → recall (BM25 ∥ dense) → RRF<br/>→ rerank → pin → fallback → pack"]:::code
+    buildidx["Build Knowledge Index<br/><i>[application · use case, на старте]</i><br/>load → split → tag → embed"]:::code
+    corpus[("Разделы + индексы<br/><i>[infrastructure · в памяти]</i><br/>~235 разделов, bm25, vec")]:::store
+  end
+
+  kbzip[("knowledge-base.zip<br/><i>DATA_DIR</i>")]:::ext
+  qwen["Qwen 27B"]:::ext
+  bge["bge-m3"]:::ext
+  rerank["Qwen3 Reranker 8B"]:::ext
+
+  client --> widget
+  widget -- "POST /messages, SSE" --> chatapi
+  batch -- "handle_turn(history), stateless" --> controller
+  chatapi --> controller
+  controller <-- "state" --> sessions
+
+  controller -- "①" --> extractor
+  controller -- "②" --> reducer
+  controller -- "③" --> scorer
+  controller -- "④" --> policy
+  controller -- "⑤ если need_facts" --> kreq
+  controller -- "⑥" --> responder
+  controller -- "⑦ SUBMITTED" --> brief
+  controller -.-> telemetry
+
+  registry -.-> reducer
+  registry -.-> policy
+  rules --> scorer
+  kreq -- "KnowledgeQuery" --> retrieve
+  retrieve -- "Evidence[]" --> controller
+  retrieve --> corpus
+  buildidx --> corpus
+  kbzip --> buildidx
+
+  extractor --> gateway
+  responder --> gateway
+  retrieve -- "embed, rerank" --> gateway
+  buildidx -. "эмбеддинги батчами" .-> gateway
+  gateway --> qwen
+  gateway --> bge
+  gateway --> rerank
+
+  brief -- "webhook" --> crm
+  crm --> manager
