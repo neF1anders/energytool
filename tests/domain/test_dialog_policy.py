@@ -10,12 +10,12 @@ from energytool.domain.dialog_policy import (
     select_leader,
 )
 from energytool.domain.extraction import Extraction, Intent
-from energytool.domain.policy import Thresholds
+from energytool.domain.policy import PolicyDecision, Thresholds
 from energytool.domain.products import ALL_PRODUCTS, Product
 from energytool.domain.scoring import ProductScore, ScoreBoard
 from energytool.domain.slots import SlotScalar
 from energytool.domain.state import DialogState
-from tests.domain.helpers import state_with
+from tests.domain.helpers import state_from
 
 P, D = Product, DialogState
 REG, TH = ContractRegistry(), Thresholds()
@@ -48,11 +48,11 @@ def go(
     *,
     b: ScoreBoard = LEADER,
     ex: Extraction = INFO,
-    dialog: D = D.DISCOVERY,
+    dialog: DialogState = D.DISCOVERY,
     mode: str = "chat",
     **state_extra: object,
-):
-    state = state_with(dialog=dialog, **(state_kw or {}))
+) -> PolicyDecision:
+    state = state_from(state_kw or {}, dialog=dialog)
     for key, value in state_extra.items():
         setattr(state, key, value)
     return decide(state, ex, b, REG, TH, mode)  # type: ignore[arg-type]
@@ -93,8 +93,8 @@ def test_qualify_to_ready_offers_contact_once_and_pins_requirements() -> None:
 
 def test_gating_slot_blocks_ready() -> None:
     without_power = {k: v for k, v in OREM_FULL.items() if k != "max_power_kw"}
-    assert not is_ready(state_with(**without_power), [P.OREM], REG, TH)
-    assert is_ready(state_with(**{**without_power, "max_power_kw": None}), [P.OREM], REG, TH)
+    assert not is_ready(state_from(without_power), [P.OREM], REG, TH)
+    assert is_ready(state_from({**without_power, "max_power_kw": None}), [P.OREM], REG, TH)
 
 
 def test_ready_then_no_contact_and_cta_cooldown() -> None:
@@ -121,7 +121,7 @@ def test_contact_to_submitted_requires_valid_phone_and_consent() -> None:
     no_consent = go({**contact, "pd_consent": False}, dialog=D.CONTACT)
     assert no_consent.dialog_to is D.CONTACT
     assert no_consent.next_slot == "pd_consent"
-    assert not contact_complete(state_with(**{**contact, "phone": "123", "pd_consent": True}))
+    assert not contact_complete(state_from({**contact, "phone": "123", "pd_consent": True}))
     assert go({**contact, "pd_consent": True}, dialog=D.SUBMITTED).dialog_to is D.SUBMITTED
 
 
@@ -155,7 +155,7 @@ def test_next_slot_prefers_gating_field_of_leader() -> None:
 
 
 def test_next_slot_skips_closed_and_twice_asked() -> None:
-    state = state_with(dialog=D.QUALIFY, max_power_kw=1100.0)
+    state = state_from({"max_power_kw": 1100.0}, dialog=D.QUALIFY)
     state.asked["monthly_consumption_kwh"] = 2
     slot = next_slot(state, D.QUALIFY, (P.OREM,), LEADER, REG, TH)
     assert slot not in {"max_power_kw", "monthly_consumption_kwh"}

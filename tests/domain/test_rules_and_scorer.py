@@ -6,7 +6,7 @@ from energytool.domain.scorer import score
 from energytool.domain.scoring import EXCLUDE, ScoringParams
 from energytool.domain.slots import SlotScalar
 from energytool.domain.state import SoftSignal
-from tests.domain.helpers import state_with
+from tests.domain.helpers import state_from, state_with
 
 P = Product
 RULES_BY_ID = {r.id: r for r in RULES}
@@ -74,8 +74,8 @@ def test_rule_conditions(
     rule_id: str, fires: dict[str, SlotScalar], silent: dict[str, SlotScalar]
 ) -> None:
     rule = RULES_BY_ID[rule_id]
-    assert rule.when(state_with(**fires)) is True
-    assert rule.when(state_with(**silent)) is False
+    assert rule.when(state_from(fires)) is True
+    assert rule.when(state_from(silent)) is False
 
 
 def test_rule_texts_render_slot_values() -> None:
@@ -103,8 +103,8 @@ def test_correction_recomputes_from_scratch() -> None:
 
 
 def test_soft_signals_decay() -> None:
-    state = state_with(turn=5)
-    fresh = state_with(turn=5)
+    state = state_from({}, turn=5)
+    fresh = state_from({}, turn=5)
     state.soft_signals.append(SoftSignal(P.PHOTO, 1.0, turn=0, source="mention"))
     fresh.soft_signals.append(SoftSignal(P.PHOTO, 1.0, turn=5, source="mention"))
     params = ScoringParams()
