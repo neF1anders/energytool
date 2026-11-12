@@ -142,8 +142,8 @@ def coerce(
             return _coerce_bool(spec, value)
         case SlotType.CHOICE:
             raw = str(value).strip().lower()
-            choices = {c.lower(): c for c in spec.choices}
-            return choices[raw] if raw in choices else Rejection(spec.id, "bad_value")
+            choices = {str(c).lower(): str(c) for c in spec.choices}
+            return str(choices[raw]) if raw in choices else Rejection(spec.id, "bad_value")
         case SlotType.DOCUMENT:
             try:
                 return DocumentStatus(str(value).strip().lower()).value
@@ -161,10 +161,9 @@ def _coerce_number(
     context = " ".join(x for x in (str(value), unit or "", quote) if x).lower()
     if spec.unit and "кВт·ч" in spec.unit and re.search(r"руб|₽|р\.", context):
         return Rejection(spec.id, "unit_mismatch")
-    number = float(value) if isinstance(value, int | float) else _parse_number(str(value))
+    number = _number_from_quote(value, unit, quote)
     if number is None:
         return Rejection(spec.id, "bad_value")
-    number *= _multiplier(str(value) if not isinstance(value, int | float) else "", unit or "")
     if spec.unit == "кВт·ч/мес" and re.search(r"год|/г\b|в г\.", (unit or "") + " " + str(value)):
         number /= 12
     if number < 0:
@@ -172,6 +171,36 @@ def _coerce_number(
     if spec.type is SlotType.INTEGER:
         return round(number)
     return round(number, 3)
+
+
+def _number_from_quote(value: SlotScalar, unit: str | None, quote: str) -> float | None:
+    """Число в базовой единице. Источник правды — цитата клиента: модель иногда сама
+    пересчитывает «1,1 МВт» в 1100 и при этом возвращает unit="МВт".
+
+    1. значение модели совпадает с числом цитаты → множитель из слов сразу после него;
+    2. значение модели = число цитаты × 10³/10⁶ → модель уже пересчитала, берём как есть;
+    3. иначе — значение модели с множителем из её значения и единицы."""
+    raw = float(value) if isinstance(value, int | float) else _parse_number(str(value))
+    value_text = "" if isinstance(value, int | float) else str(value)
+    for match in _NUMBER.finditer(quote):
+        quoted = _to_float(match.group())
+        if quoted is None or raw is None:
+            continue
+        tail = quote[match.end() : match.end() + 16]
+        if abs(quoted - raw) < 1e-9:
+            return quoted * _multiplier(value_text, tail)
+        if quoted > 0 and any(abs(raw - quoted * f) < 1e-6 * raw for f in (1e3, 1e6)):
+            return raw
+    if raw is None:
+        return None
+    return raw * _multiplier(value_text, unit or "")
+
+
+def _to_float(text: str) -> float | None:
+    try:
+        return float(text.replace(" ", "").replace(" ", "").replace(",", "."))
+    except ValueError:
+        return None
 
 
 def _parse_number(text: str) -> float | None:

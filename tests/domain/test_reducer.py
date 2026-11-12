@@ -109,3 +109,24 @@ def test_coerce(
 def test_coerce_rejects(slot_id: str, value: SlotScalar, unit: str | None, reason: str) -> None:
     result = coerce(REG.get(slot_id), value, unit)
     assert getattr(result, "reason", None) == reason
+
+
+@pytest.mark.parametrize(
+    ("value", "unit", "quote", "expected"),
+    [
+        (1100, "МВт", "мощность 1,1 МВт", 1100.0),  # модель уже пересчитала
+        (1.1, "МВт", "мощность 1,1 МВт", 1100.0),
+        ("1,1", None, "у нас 1,1 МВт", 1100.0),
+        (600, "кВт", "не 1,1 МВт, а 600 кВт", 600.0),
+        (750, None, "около 750", 750.0),
+    ],
+)
+def test_number_follows_client_quote(
+    value: SlotScalar, unit: str | None, quote: str, expected: float
+) -> None:
+    assert coerce(REG.get("max_power_kw"), value, unit, quote) == expected
+
+
+def test_choice_is_stored_as_plain_string() -> None:
+    value = coerce(REG.get("segment"), "industry", None)
+    assert type(value) is str
