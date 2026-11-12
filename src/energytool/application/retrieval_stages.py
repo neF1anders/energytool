@@ -313,7 +313,9 @@ def _recall_lists(
 def _query_vectors(c: Candidates, ctx: Ctx) -> list[list[float]] | None:
     if c.query_vectors is not None:
         return c.query_vectors
-    if ctx.embedder is None or not ctx.parsed.texts or "dense_failed" in c.notes:
+    if not ctx.index.dense_ready or ctx.embedder is None or not ctx.parsed.texts:
+        return None
+    if "dense_failed" in c.notes:
         return None
     try:
         c.query_vectors = ctx.embedder.embed([t.text for t in ctx.parsed.texts])

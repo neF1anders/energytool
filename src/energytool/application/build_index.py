@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from energytool.application.ports import (
     ChunkStore,
     Embedder,
+    ExternalServiceError,
     IndexFactory,
     KnowledgeSource,
     LexicalIndex,
@@ -50,6 +51,7 @@ class KnowledgeIndex:
     chunks: ChunkStore
     lexical: LexicalIndex
     vectors: VectorIndex
+    dense_ready: bool = True  # False — эмбеддер был недоступен при индексации, только BM25
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,8 +67,9 @@ class BuildKnowledgeIndex:
         files = self.source.load()
         sections = [section for file in files for section in self.splitter.split(file)]
         chunks = make_chunks(sections, self.tagger)
-        vectors = self.embedder.embed([chunk.text for chunk in chunks])
+        vectors, dense_ready = self._embed(chunks)
         store, lexical, dense = self.factory.build(chunks, vectors)
+        index = KnowledgeIndex(store, lexical, dense, dense_ready)
         logger.info(
             "knowledge index built",
             extra={
@@ -74,11 +77,19 @@ class BuildKnowledgeIndex:
                     "files": len(files),
                     "chunks": len(chunks),
                     "tokens": sum(c.tokens for c in chunks),
+                    "dense_ready": dense_ready,
                     "ms": round((time.perf_counter() - started) * 1000, 1),
                 }
             },
         )
-        return KnowledgeIndex(chunks=store, lexical=lexical, vectors=dense)
+        return index
+
+    def _embed(self, chunks: Sequence[Chunk]) -> tuple[list[list[float]], bool]:
+        try:
+            return self.embedder.embed([chunk.text for chunk in chunks]), True
+        except ExternalServiceError as exc:
+            logger.error("embedder unavailable at indexing, dense search disabled: %s", exc)
+            return [[0.0] for _ in chunks], False
 
 
 def make_chunks(sections: Sequence[RawSection], tagger: SectionTagger) -> list[Chunk]:
