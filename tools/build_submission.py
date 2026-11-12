@@ -54,12 +54,18 @@ def imported_modules(path: Path) -> set[str]:
                 raise SubmissionBuildError(f"{path}: относительный импорт запрещён")
             if node.module and node.module.split(".")[0] == PACKAGE:
                 modules.add(node.module)
-                # from energytool.a import b, где b — подмодуль
-                modules.update(
-                    f"{node.module}.{alias.name}"
+                # from energytool.a import b, где b — подмодуль: после переписывания это
+                # атрибут модуля energytool__a, которого нет — ломается только в ZIP
+                submodules = [
+                    alias.name
                     for alias in node.names
                     if module_file(f"{node.module}.{alias.name}") is not None
-                )
+                ]
+                if submodules:
+                    raise SubmissionBuildError(
+                        f"{path}: импорт подмодулей {submodules} из {node.module} — "
+                        "импортируйте функции и классы из самих модулей"
+                    )
         elif isinstance(node, ast.Import):
             modules.update(a.name for a in node.names if a.name.split(".")[0] == PACKAGE)
     return modules
@@ -111,13 +117,39 @@ def requirements() -> list[str]:
     return sorted(deps)
 
 
-def build(output: Path = DEFAULT_OUTPUT) -> Path:
+_ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def parse_defaults(pairs: list[str]) -> dict[str, str]:
+    defaults: dict[str, str] = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not _ENV_KEY.match(key):
+            raise SubmissionBuildError(f"--env ожидает KEY=VAL, получено {pair!r}")
+        defaults[key] = value
+    return defaults
+
+
+def with_defaults(source: str, defaults: dict[str, str]) -> str:
+    """Вставляет os.environ.setdefault(...) перед импортом пакета: так вариант конфигурации
+    (например, BATCH_PIPELINE=full) уезжает в ZIP без правки кода, а переменные
+    платформы по-прежнему важнее."""
+    if not defaults:
+        return source
+    lines = ["import os", *(f"os.environ.setdefault({k!r}, {v!r})" for k, v in defaults.items())]
+    marker = "import sys\n"
+    return source.replace(marker, marker + "\n".join(lines) + "\n", 1)
+
+
+def build(output: Path = DEFAULT_OUTPUT, defaults: dict[str, str] | None = None) -> Path:
     modules = reachable_modules(ENTRY)
     files = {
         f"{flat_name(d)}.py": rewrite_imports(p.read_text(encoding="utf-8"))
         for d, p in modules.items()
     }
-    files["solution.py"] = rewrite_imports(ENTRY.read_text(encoding="utf-8"))
+    files["solution.py"] = with_defaults(
+        rewrite_imports(ENTRY.read_text(encoding="utf-8")), defaults or {}
+    )
     leftovers = [
         name
         for name, text in files.items()
@@ -140,9 +172,16 @@ def build(output: Path = DEFAULT_OUTPUT) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="KEY=VAL",
+        help="умолчание переменной окружения, зашиваемое в solution.py (env платформы важнее)",
+    )
     args = parser.parse_args(argv)
     try:
-        build(args.output)
+        build(args.output, parse_defaults(args.env))
     except SubmissionBuildError as exc:
         print(f"ошибка сборки: {exc}", file=sys.stderr)
         return 1

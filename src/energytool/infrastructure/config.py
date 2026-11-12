@@ -81,6 +81,9 @@ class Settings:
     log_level: str = "INFO"
     log_format: LogFormat = "json"
     run_budget_sec: int = 1080
+    fast_path_after_sec: int = 900
+    batch_pipeline: str = "naive"  # naive | full: на демо равны по качеству, naive вдвое быстрее
+    batch_ask: bool = False  # вопрос анкеты в ответе этапа 1: на демо слегка хуже
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Settings:
@@ -115,6 +118,9 @@ class Settings:
             log_level=reader.text("LOG_LEVEL", "INFO").upper(),
             log_format="text" if reader.text("LOG_FORMAT", "json") == "text" else "json",
             run_budget_sec=reader.integer("RUN_BUDGET_SEC", 1080, 60, 1200),
+            fast_path_after_sec=reader.integer("FAST_PATH_SEC", 900, 0, 1200),
+            batch_pipeline="full" if reader.text("BATCH_PIPELINE") == "full" else "naive",
+            batch_ask=reader.flag("BATCH_ASK", default=False),
         )
 
     def require_llm(self) -> None:
@@ -149,6 +155,9 @@ class Settings:
             "embedding_cache_dir": str(self.embedding_cache_dir or ""),
             "retrieval_config": self.retrieval_config,
             "run_budget_sec": self.run_budget_sec,
+            "fast_path_after_sec": self.fast_path_after_sec,
+            "batch_pipeline": self.batch_pipeline,
+            "batch_ask": self.batch_ask,
         }
 
 

@@ -20,7 +20,6 @@ from pathlib import Path
 from energytool.application.answer_question import AnswerMode, AnswerQuestion
 from energytool.bootstrap import Container, build
 from energytool.domain.knowledge import BudgetSnippet
-from energytool.infrastructure.llm.responder import LlmReplyWriter
 from energytool.infrastructure.logs import log_context
 from energytool.interface.batch.submission import (
     EMPTY_ANSWER,
@@ -37,20 +36,26 @@ PROGRESS_EVERY = 10
 
 
 class Deadline:
-    def __init__(self, budget_sec: float) -> None:
+    """Режим по прошедшему времени: FULL → FAST (без Extractor) → NO_LLM (spec §6.3)."""
+
+    def __init__(self, fast_after_sec: float, no_llm_after_sec: float) -> None:
         self._started = time.monotonic()
-        self._budget = budget_sec
+        self._fast_after = fast_after_sec
+        self._no_llm_after = no_llm_after_sec
 
     def elapsed(self) -> float:
         return time.monotonic() - self._started
 
     def mode(self) -> AnswerMode:
-        return AnswerMode.FULL if self.elapsed() < self._budget else AnswerMode.NO_LLM
+        elapsed = self.elapsed()
+        if elapsed >= self._no_llm_after:
+            return AnswerMode.NO_LLM
+        return AnswerMode.FULL if elapsed < self._fast_after else AnswerMode.FAST
 
 
 def main() -> int:
     container = build()
-    deadline = Deadline(container.settings.run_budget_sec)
+    deadline = Deadline(container.settings.fast_path_after_sec, container.settings.run_budget_sec)
     roots = [*container.data_roots(), Path(sys.argv[0]).resolve().parent]
     questions = read_questions(find_questions(roots))
     logger.info("questions loaded", extra={"data": {"count": len(questions)}})
@@ -74,11 +79,17 @@ def answer_all(
     container.gateway.calibrate_thinking()
     index = container.build_index()
     settings = container.settings
+    retrieve = container.retriever(index)
+    budget = BudgetSnippet(top_k=settings.top_k, fallback_k=1)
+    full = settings.batch_pipeline == "full"
     use_case = AnswerQuestion(
-        retrieve=container.retriever(index),
-        writer=LlmReplyWriter(container.gateway),
+        retrieve=retrieve,
+        writer=container.reply_writer(),
         telemetry=container.telemetry,
-        budget=BudgetSnippet(top_k=settings.top_k, fallback_k=1),
+        budget=budget,
+        extractor=container.extractor() if full else None,
+        qualifier=container.qualifier(retrieve, budget) if full else None,
+        ask_in_batch=settings.batch_ask,
     )
     answers: dict[str, str] = {}
     durations: list[float] = []

@@ -13,16 +13,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from energytool.application.build_index import BuildKnowledgeIndex, KnowledgeIndex
+from energytool.application.qualification import Qualifier, Retriever
 from energytool.application.retrieval_stages import get_config
 from energytool.application.retrieve_knowledge import RetrieveKnowledge
+from energytool.domain.contract import ContractRegistry
+from energytool.domain.knowledge import BudgetSnippet
+from energytool.domain.policy import Thresholds
+from energytool.domain.rules import PRIORS, RULES
+from energytool.domain.scoring import ScoringParams
 from energytool.infrastructure.config import Settings
 from energytool.infrastructure.index.factory import InMemoryIndexFactory
 from energytool.infrastructure.kb.loader import FileKnowledgeSource, find_knowledge_base
 from energytool.infrastructure.kb.splitter import MarkdownSectionSplitter
 from energytool.infrastructure.kb.tagmap import KbSectionTagger
 from energytool.infrastructure.llm.embedder import GatewayEmbedder
+from energytool.infrastructure.llm.extractor import LlmFactExtractor
 from energytool.infrastructure.llm.gateway import LlmGateway
 from energytool.infrastructure.llm.reranker import GatewayReranker
+from energytool.infrastructure.llm.responder import LlmReplyWriter
 from energytool.infrastructure.logs import configure_logging
 from energytool.infrastructure.telemetry import LogTelemetry
 
@@ -63,6 +71,24 @@ class Container:
             embedder=self.embedder,
             reranker=self.reranker,
         )
+
+    def qualifier(self, retrieve: Retriever, budget: BudgetSnippet) -> Qualifier:
+        """Доменные правила и пороги — из domain (spec §5.5), не из окружения."""
+        return Qualifier(
+            registry=ContractRegistry(),
+            rules=RULES,
+            priors=PRIORS,
+            params=ScoringParams(),
+            thresholds=Thresholds(),
+            retrieve=retrieve,
+            budget=budget,
+        )
+
+    def extractor(self) -> LlmFactExtractor:
+        return LlmFactExtractor(self.gateway)
+
+    def reply_writer(self) -> LlmReplyWriter:
+        return LlmReplyWriter(self.gateway)
 
 
 def build(env: Mapping[str, str] | None = None) -> Container:
