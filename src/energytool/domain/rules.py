@@ -332,10 +332,20 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "PHOTO_ORG",
         P.PHOTO,
-        lambda s: _segment_in(s, S.RESOURCE_SUPPLY, S.GRID_COMPANY, S.HOUSING, S.SALES_COMPANY),
+        lambda s: _segment_in(s, S.RESOURCE_SUPPLY, S.GRID_COMPANY, S.SALES_COMPANY),
         2.0,
         "организация собирает показания у абонентов",
         "20-products/25-meter-reading › Кому подходит",
+    ),
+    Rule(
+        # для УК/ТСЖ/СНТ платформа учёта первична, фото — дополнение (20-portfolio);
+        # вес снижен после eval/dialog 2026-11-12: при +2 у СНТ не было лидера
+        "PHOTO_HOUSING",
+        P.PHOTO,
+        lambda s: _segment_in(s, S.HOUSING),
+        1.0,
+        "УК, ТСЖ или СНТ: приём показаний от жителей",
+        "20-products/20-portfolio › Управляющая компания, ТСЖ, СНТ, товарищество",
     ),
     Rule(
         "PHOTO_MANUAL",

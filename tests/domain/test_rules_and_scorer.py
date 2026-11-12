@@ -60,7 +60,8 @@ CASES: list[tuple[str, dict[str, SlotScalar], dict[str, SlotScalar]]] = [
     ("HOUSING_LOAD", {"segment": "housing"}, {}),
     ("LOSSES_GATE", {"segment": "sales_company"}, {"segment": "grid_company"}),
     ("LOSSES_GRID", {"segment": "grid_company"}, {"segment": "industry"}),
-    ("PHOTO_ORG", {"segment": "resource_supply"}, {"segment": "warehouse"}),
+    ("PHOTO_ORG", {"segment": "resource_supply"}, {"segment": "housing"}),
+    ("PHOTO_HOUSING", {"segment": "housing"}, {"segment": "resource_supply"}),
     ("PHOTO_MANUAL", {"meters_connectivity": "without"}, {"meters_connectivity": "with_comm"}),
 ]
 
