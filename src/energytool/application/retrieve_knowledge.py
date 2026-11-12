@@ -7,76 +7,97 @@ Use case не знает про диалог: запрос из состояни
 Поэтому его можно гонять напрямую на размеченных запросах (eval/retrieval) с разными
 конфигурациями стадий — без Extractor, Policy и LLM.
 
-Пайплайн — композиция стадий. Стадия — чистая функция (Candidates, Ctx) -> Candidates;
-конфигурация = кортеж стадий. Эксперимент = другой кортеж или другие параметры.
-
-    parse      сниппеты → нормализованный запрос (тексты, области, бусты, бюджет)
-    by_id      IdSnippet → evidence(origin="by_id")              ChunkStore.get
-    scope      ScopeSnippet → allowed chunk ids                  ChunkStore.where
-    recall     каждый TextSnippet(role="query"): BM25 ∥ dense    LexicalIndex, Embedder+VectorIndex
-    fuse       RRF (k=60) по всем спискам с весами сниппетов → top recall_k
-    boost      BoostSnippet: score *= factor для разделов области
-    rerank     Reranker → top_k; below_floor, если лучший < min_rerank_score
-    pin        PinSnippet → evidence(origin="pinned")            ChunkStore.where
-    fallback   recall+fuse+rerank без области → fallback_k, origin="fallback"
-    pack       дедупликация, порядок by_id → pinned → ranked → fallback, бюджет max_tokens;
-               scope_mass — доля реранка по областям (→ SoftSignal)
-
-Стадии живут в application/retrieval_stages.py, хелперы (нормализация текста,
-RRF) — там же. Деградация: reranker=None → ранжирование по fused.
+Стадии, конфигурации и деградации — application/retrieval_stages.py.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
+import logging
+import time
+from dataclasses import dataclass
 
 from energytool.application.build_index import KnowledgeIndex
 from energytool.application.ports import Embedder, Reranker
-from energytool.domain.knowledge import Evidence, KnowledgeQuery, KnowledgeResult
+from energytool.application.retrieval_stages import (
+    Candidates,
+    Ctx,
+    PipelineConfig,
+    parse_query,
+)
+from energytool.domain.knowledge import KnowledgeQuery, KnowledgeResult
 
+logger = logging.getLogger(__name__)
 
-@dataclass(slots=True)
-class Candidates:
-    """Промежуточное состояние пайплайна."""
-
-    allowed: frozenset[str] | None = None  # None = вся база
-    lists: dict[str, list[tuple[str, float]]] = field(
-        default_factory=dict
-    )  # "bm25:0", "dense:0" → ранжирование
-    fused: list[tuple[str, float]] = field(default_factory=list)
-    evidence: list[Evidence] = field(default_factory=list)
-    below_floor: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class Ctx:
-    query: KnowledgeQuery
-    index: KnowledgeIndex
-    embedder: Embedder
-    reranker: Reranker | None
-    rrf_k: int
-    timings_ms: dict[str, float]
-
-
-Stage = Callable[[Candidates, Ctx], Candidates]
-
-
-@dataclass(frozen=True, slots=True)
-class PipelineConfig:
-    name: str
-    stages: tuple[Stage, ...]  # по умолчанию retrieval_stages.DEFAULT
-    rrf_k: int = 60
+_TRACE_TOP = 5
 
 
 @dataclass(frozen=True, slots=True)
 class RetrieveKnowledge:
     config: PipelineConfig
     index: KnowledgeIndex
-    embedder: Embedder
+    embedder: Embedder | None = None
     reranker: Reranker | None = None
 
     def __call__(self, query: KnowledgeQuery) -> KnowledgeResult:
-        """Прогнать стадии config.stages, замерить каждую в timings_ms, собрать KnowledgeResult
-        (trace: списки по стадиям для отладки и eval)."""
-        raise NotImplementedError
+        started = time.perf_counter()
+        parsed = parse_query(query)
+        ctx = Ctx(
+            parsed=parsed,
+            index=self.index,
+            embedder=self.embedder if self.config.use_embedder else None,
+            reranker=self.reranker if self.config.use_reranker else None,
+            rrf_k=self.config.rrf_k,
+        )
+        candidates = Candidates()
+        timings: dict[str, float] = {}
+        for stage in self.config.stages:
+            stage_started = time.perf_counter()
+            candidates = stage(candidates, ctx)
+            timings[stage.__name__] = _ms_since(stage_started)
+            logger.debug(
+                "retrieval stage",
+                extra={"data": {"stage": stage.__name__, **_stage_snapshot(candidates)}},
+            )
+        timings["total"] = _ms_since(started)
+        result = KnowledgeResult(
+            evidence=candidates.packed,
+            below_floor=candidates.below_floor,
+            scope_mass=candidates.scope_mass,
+            timings_ms=timings,
+            trace={
+                "config": self.config.name,
+                "notes": list(candidates.notes),
+                "lists": {k: v[:_TRACE_TOP] for k, v in candidates.lists.items()},
+                "fused": candidates.fused[:_TRACE_TOP],
+            },
+        )
+        logger.info(
+            "retrieval done",
+            extra={
+                "data": {
+                    "config": self.config.name,
+                    "query": parsed.rerank_query[:200],
+                    "evidence": [
+                        (e.chunk.id, e.origin, round(e.score, 3)) for e in result.evidence
+                    ],
+                    "below_floor": result.below_floor,
+                    "notes": candidates.notes,
+                    "ms": timings["total"],
+                }
+            },
+        )
+        return result
+
+
+def _stage_snapshot(c: Candidates) -> dict[str, object]:
+    return {
+        "allowed": None if c.allowed is None else len(c.allowed),
+        "lists": {k: len(v) for k, v in c.lists.items()},
+        "fused_top": [chunk_id for chunk_id, _ in c.fused[:3]],
+        "evidence": len(c.evidence),
+        "notes": list(c.notes),
+    }
+
+
+def _ms_since(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)

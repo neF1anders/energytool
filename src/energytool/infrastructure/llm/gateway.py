@@ -23,6 +23,7 @@ from typing import Any, Literal, TypedDict
 
 import httpx
 
+from energytool.application.ports import ExternalServiceError
 from energytool.application.trace import LlmCall, LlmCallKind, record_llm_call
 from energytool.infrastructure.config import ModelEndpoint, ModelsProfile, Settings
 
@@ -34,7 +35,7 @@ _BASE_BACKOFF_SEC = 0.5
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
-class LlmGatewayError(Exception):
+class LlmGatewayError(ExternalServiceError):
     """Базовая ошибка обращения к моделям."""
 
 
