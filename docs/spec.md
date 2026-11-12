@@ -1,6 +1,6 @@
 # Ассистент-квалификатор Energytool — спецификация
 
-Статус: v0.6 · 2026-11-12 · M0–M4 готовы. Изменения по ходу разработки помечены **[Mn]**.
+Статус: v1.0 · 2026-11-12 · M0–M7 готовы, отчёт о решениях — [`decisions.md`](decisions.md). Изменения по ходу разработки помечены **[Mn]**.
 Диаграммы: [`docs/diagrams/`](diagrams/README.md) · сущности домена: [`src/energytool/domain/`](../src/energytool/domain/) · порты и use cases: [`src/energytool/application/`](../src/energytool/application/)
 
 ---
@@ -62,6 +62,8 @@ src/energytool/
     knowledge_request.py       # state → KnowledgeQuery (чистая функция)
     retrieval_stages.py        # стадии пайплайна + RRF, нормализация текста
     handle_turn.py             # use case: один ход веб-чата
+    qualification.py           # общий шаг ②–⑤ для веба и батча [M4]
+    transcript.py              # разбор ячейки этапа 1 в историю [M2]
     answer_question.py         # use case: один вопрос этапа 1 (stateless)
     submit_lead.py             # use case: заявка + бриф
     trace.py                   # TurnTrace — DTO телеметрии; сборщик вызовов LLM за ход [M0]
@@ -71,7 +73,8 @@ src/energytool/
     llm/embedder.py  llm/reranker.py                           # порты Embedder, Reranker
     kb/loader.py  kb/splitter.py  kb/tagmap.py                 # знание о структуре базы Energytool
     index/memory_store.py  index/bm25.py  index/vectors.py  index/factory.py   # in-memory, bm25s, numpy
-    storage/sqlite_sessions.py  storage/leads.py  crm_webhook.py
+    storage/database.py  storage/state_codec.py  storage/sqlite_sessions.py  storage/leads.py   # CRM-вебхук внутри leads.py [M5–M6]
+    brief_render.py  labels.py                                 # бриф текстом и JSON, подписи вариантов [M6]
     logs.py                    # настройка logging, JSON, маскирование ПДн, контекст хода [M0]
     telemetry.py               # порт Telemetry → лог (turn_trace) [M0]
   interface/
@@ -80,6 +83,7 @@ src/energytool/
     web/static/                # виджет
     cli.py                     # dev-команды: ping [M0]
   bootstrap.py                 # composition root: Settings → адаптеры → use cases
+  bootstrap_web.py             # composition root веба: SQLite, HandleTurn, SubmitLead (не попадает в ZIP) [M5]
   __main__.py                  # uv run python -m energytool <команда> [M0]
 solution.py                    # 5 строк: from energytool.interface.batch.run import main
 tools/build_submission.py      # плоская сборка ZIP (раздел 13)
@@ -396,6 +400,8 @@ leads(id, session_id, created_at, brief_text, brief_json, sent_at, status)
 ```
 CRM: `crm_webhook.py` — POST JSON на `CRM_WEBHOOK_URL` или запись в `leads` со статусом `mock_sent`.
 
+
+Реализация **[M5–M6]** — `infrastructure/storage/`: `database.py` (схема, WAL, внешние ключи; в `sessions` добавлено `replaced_by` — ссылка «Новый диалог» → новая сессия), `state_codec.py` (`ConversationState` ⇄ JSON с версией формата, история правок слотов сохраняется), `sqlite_sessions.py` (`SessionRepo` + `create/replace/exists/messages/traces`; ошибки драйвера → `StorageError(ExternalServiceError)`), `leads.py` (`SqliteLeadSink`: заявка всегда в `leads`, затем вебхук; статусы `mock_sent | sent | send_failed`, ошибка вебхука заявку не теряет). Бриф — `infrastructure/brief_render.py` (`TextBriefRenderer`: текст по порядку разговора менеджера + JSON для CRM; варианты выборов — русскими подписями из `infrastructure/labels.py`, общими с промптом Extractor). `SubmitLead` — `application/submit_lead.py`: `from_step` (⑦ в чате) и `from_form` (форма); после заявки бот отвечает фиксированной благодарностью. Живой прогон хлебозавода (5 ходов, OpenRouter): лидер ОРЭМ с 1-го хода, READY на 3-м, заявка на 5-м, бриф с 4 причинами, исключённым «поиском потерь», 8 полями анкеты с цитатами клиента.
 ### 8.5 Телеметрия — `telemetry.py`
 `TurnTrace` на каждый ход, JSON-строкой в лог и в `traces`:
 ```
@@ -428,9 +434,13 @@ GET  /api/leads                            → список заявок с бр
 GET  /healthz
 ```
 
+
+Реализация **[M5–M6]** — `interface/http/{app,routes,schemas,debug_view}.py`, сборка — `bootstrap_web.py` (отдельно от `bootstrap.py`: тот достижим из `solution.py`, а в ZIP не должно быть SQLAlchemy/FastAPI). Индекс строится и thinking калибруется в lifespan. SSE отдаёт уже готовый ответ кусками по 3 слова (`token`), затем `meta` (`TurnOut`: ответ, состояние, `lead_id`, `DebugInfo`) и `done`; `?stream=false` — тот же `TurnOut` JSON. Дополнительно к таблице выше: `GET /api/sessions/{id}/messages`, `GET /leads` (HTML), `/`, `/widget.js`. Неизвестная сессия → 404, невалидная заявка (телефон, согласие) → 422.
 ### 9.2 Виджет
 Минимум, без дизайна: один HTML + JS, стрим ответа, 4 кнопки-сценария («Растут счета», «Учёт по объектам», «Солнечная станция», «Потери в сети»), «Новый диалог», переключатель отладки (время, документы, правила), форма контакта в чате. Встраивание одним `<script>`.
 
+
+Реализация **[M5]** — `interface/web/static/widget.js` (без зависимостей, ~250 строк) + `index.html` (демо-страница) + `leads.html` (страница менеджера). Сессия в `localStorage`; SSE читается через `fetch` + `ReadableStream` (EventSource не умеет POST). Отладка под каждым ответом: время по шагам (извлечение/поиск/ответ), переход автомата, лидер, следующий вопрос, топ-3 продукта, сработавшие правила, вызовы LLM, деградации, документы базы с путём раздела и скором. Форма заявки открывается сама в READY/CONTACT.
 ### 9.3 Batch — `interface/batch/run.py`
 Читает `DATA_DIR/questions.csv`, строит индекс, гонит `AnswerQuestion` параллельно, пишет `submission.csv` (`id,answer`, UTF-8, кавычки, без переносов строк, ≤ 10 000 символов, без пустых и дублей). Атомарная запись, код возврата 0.
 
@@ -487,6 +497,7 @@ GET  /healthz
 
   Решение: по умолчанию в батче `BATCH_PIPELINE=naive`, `BATCH_ASK=false` — на одиночных вопросах полный конвейер качества не добавляет, навязанный вопрос анкеты слегка вредит, а время вдвое больше (30 с против 13 с на 18 вопросов, 4 потока). Полный конвейер — основной путь веб-чата (анкета, лидер, заявка). Вариант для платформы собирается без правки кода: `tools/build_submission.py --env BATCH_PIPELINE=full`.
 - `eval/dialog/`: 20–30 персон с эталонной анкетой (легенда хлебозавода — первая), клиента играет LLM с «не знаю», путаницей терминов и сменой темы. Метрики: полнота и точность полей, ходов до READY, доля ложных полей, верный ли лидер.
+  **[M7]** Стенд: `uv run --env-file .env python -m eval.dialog [--personas …] [--turns 8]`; 8 синтетических персон в `eval/dialog/personas.py` (хлебозавод, склад с кровлей, сеть магазинов, сетевая компания, СНТ, водоканал, ферма с отключениями, ИТ-офис), клиента играет Qwen по легенде, бот — настоящий `HandleTurn`. Результат 2026-11-12: полнота анкеты 28/31 (90%), ошибочных полей 0, верный лидер 7/8, заявок 4/8 за 8 ходов. Промах — СНТ без лидера (платформа и фото почти равны) → правило фото для УК/ТСЖ/СНТ выделено в `PHOTO_HOUSING` с весом +1 вместо +2; после правки СНТ: верный лидер, READY на 6-м ходу, заявка на 7-м.
 
 ## 13. Сборка сабмита
 
@@ -505,6 +516,8 @@ GET  /healthz
 - Ручная проверка «как на платформе»: распаковать ZIP и запустить `uv run --no-project --with-requirements requirements.txt python solution.py` — одноразовое окружение только с зависимостями из ZIP.
 
 Docker: `Dockerfile` (python:3.11-slim, без компиляторов), `compose.yaml` (backend + статика виджета), `.dockerignore` (материалы и база знаний не попадают в образ), команда запуска одна.
+
+Реализация **[M7]**: образ `python:3.11-slim` + `uv` из `ghcr.io/astral-sh/uv:0.13.1`, `uv sync --frozen --no-dev --extra web` (слой зависимостей отдельно от кода), пользователь без root, `HEALTHCHECK` на `/healthz`, `CMD uvicorn … --factory`. `compose.yaml`: один сервис (API + виджет + страница заявок), `env_file: .env` (необязательный), `./data → /app/data:ro` (база знаний монтируется, в образ не входит), том `energytool-var` для SQLite, `EMB_CACHE_DIR` обнулён. `.dockerignore` исключает `materials/`, `data/`, `eval/`, `.env`, тесты и инструменты. Проверено: `docker build` + `docker run` на OpenRouter — health OK, ответ по базе, ошибок в логе нет. Нюанс: локальный umask даёт исходникам права 600 — в образе `chmod -R a+rX /app/src`.
 
 ## 14. Правила разработки
 
@@ -541,15 +554,16 @@ Git: ветки `feat/…`, `fix/…`; один PR — один этап раз�
 | M2 ✅ | Наивный путь этапа 1: AnswerQuestion = ретрив + Responder, сборка ZIP | первый сабмит, локальный судья против sample_submission |
 | M3 ✅ | Domain-сервисы: reducer, rules, scorer, dialog_policy, brief + тесты | все переходы автомата покрыты |
 | M4 ✅ | Extractor + полный HandleTurn, batch на полном конвейере | сравнение M2 vs M4 на eval ответов |
-| M5 | HTTP, SQLite, виджет, режим отладки | путь «вопрос → заявка» проходит руками |
-| M6 | SubmitLead, бриф, мок CRM, страница заявок | бриф хлебозавода совпадает с ожидаемым |
-| M7 | Docker, README, `.env.example`, `eval/dialog` | одна команда поднимает всё |
+| M5 ✅ | HTTP, SQLite, виджет, режим отладки | путь «вопрос → заявка» проходит руками |
+| M6 ✅ | SubmitLead, бриф, мок CRM, страница заявок | бриф хлебозавода совпадает с ожидаемым |
+| M7 ✅ | Docker, README, `.env.example`, `eval/dialog` | одна команда поднимает всё |
 
 ## 16. Открытые вопросы
 
-- Поддержка `response_format=json_schema` у прокси платформы и как на нём выключается thinking (OpenRouter: id `qwen/qwen3.8-27b`, `reasoning.enabled=false`, `json_schema` заявлен — §8.1) **[M0]**.
+- Как прокси платформы выключает thinking и есть ли `response_format=json_schema`. Закрыто страховкой: калибровка на старте прогона + повтор пустого ответа с бо́льшим лимитом (§8.1, §8.3) **[M2]**. Что выбрала калибровка на платформе — смотреть в логе прогона (`thinking calibrated`).
 - ~~Есть ли на OpenRouter та же Qwen 27B, bge-m3 и реранкер~~ — есть, все три отвечают **[M0]**.
-- Есть ли у прокси лимит RPS — от этого зависит `MAX_WORKERS` и бюджет 20 минут.
-- Порог реранка τ и веса правил — подобрать на eval.
-- Нужен ли второй Extractor-вызов в батче для длинных диалогов (5 из 18 демо — диалоги).
-- Оставлять ли `next_slot`-вопрос в ответах этапа 1 — проверить на локальном судье.
+- Есть ли у прокси лимит RPS — от этого зависит `MAX_WORKERS` и бюджет 20 минут. Наивный путь: ~0.7 с/вопрос при 4 потоках на OpenRouter (18 демо — 13 с); при 429 gateway повторяет с паузой.
+- Порог реранка τ (`Thresholds.rerank_floor`) пока `None`: на демо нет вопросов вне базы, подобрать на синтетике «вне компетенции».
+- ~~Нужен ли второй Extractor-вызов в батче~~ — в батче по умолчанию наивный путь без Extractor (§12) **[M4]**.
+- ~~Оставлять ли `next_slot`-вопрос в ответах этапа 1~~ — нет: на локальном судье слегка хуже (`BATCH_ASK=false`) **[M4]**.
+- Насколько локальный судья совпадает с платформенным — проверить по первым посылкам (`submission-*.zip` в `dist/`).

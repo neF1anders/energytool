@@ -12,6 +12,7 @@ services:
     environment:
       DATA_DIR: /app/data
       SQLITE_PATH: /app/var/energytool.sqlite
+      EMB_CACHE_DIR: ""  # дисковый кэш эмбеддингов — только для разработки
     volumes:
       - ./data:/app/data:ro
       - energytool-var:/app/var
