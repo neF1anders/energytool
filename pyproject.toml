@@ -31,7 +31,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["materials"]
+extend-exclude = ["materials", "eval/data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "N", "TID", "RUF100"]
@@ -46,11 +46,11 @@ known-first-party = ["energytool"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src", "tests", "eval"]
-exclude = ["^materials/"]
+files = ["src", "tests", "eval", "tools"]
+exclude = ["^materials/", "^eval/data/"]
 
 [[tool.mypy.overrides]]
-module = ["tests.*", "eval.*"]
+module = ["tests.*", "eval.*", "tools.*"]
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
