@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Energytool — демо виджета</title>
+  <style>
+    body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2023; background: #fff; }
+    header { background: #1d2023; color: #fff; padding: 20px 32px; }
+    main { max-width: 760px; margin: 40px auto; padding: 0 16px; }
+    code { background: #f2f3f5; padding: 2px 6px; border-radius: 6px; }
+    a { color: #e30611; }
+  </style>
+</head>
+<body>
+  <header><b>МТС Energytool</b> · демо-страница сайта</header>
+  <main>
+    <h1>ИИ-консультант для сайта</h1>
+    <p>Кнопка в правом нижнем углу открывает чат. В шапке чата — режим отладки (время ответа,
+      документы базы знаний, сработавшие правила), форма заявки и «Новый диалог».</p>
+    <p>Встраивание на любой сайт — одна строка:</p>
+    <p><code>&lt;script src="https://&lt;host&gt;/widget.js" data-api="https://&lt;host&gt;" defer&gt;&lt;/script&gt;</code></p>
+    <p>Заявки менеджера: <a href="/leads">/leads</a> · API: <a href="/docs">/docs</a></p>
+  </main>
+  <script src="/widget.js" data-api="" defer></script>
+</body>
+</html>

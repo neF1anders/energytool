@@ -34,3 +34,4 @@ htmlcov/
 eval/data/
 .cache/
 dist/
+var/

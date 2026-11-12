@@ -84,6 +84,8 @@ class Settings:
     fast_path_after_sec: int = 900
     batch_pipeline: str = "naive"  # naive | full: на демо равны по качеству, naive вдвое быстрее
     batch_ask: bool = False  # вопрос анкеты в ответе этапа 1: на демо слегка хуже
+    sqlite_path: Path = Path("var/energytool.sqlite")
+    crm_webhook_url: str = ""  # пусто — заявка пишется в leads со статусом mock_sent
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Settings:
@@ -121,6 +123,8 @@ class Settings:
             fast_path_after_sec=reader.integer("FAST_PATH_SEC", 900, 0, 1200),
             batch_pipeline="full" if reader.text("BATCH_PIPELINE") == "full" else "naive",
             batch_ask=reader.flag("BATCH_ASK", default=False),
+            sqlite_path=Path(reader.text("SQLITE_PATH", "var/energytool.sqlite")),
+            crm_webhook_url=reader.url("CRM_WEBHOOK_URL"),
         )
 
     def require_llm(self) -> None:
@@ -158,6 +162,8 @@ class Settings:
             "fast_path_after_sec": self.fast_path_after_sec,
             "batch_pipeline": self.batch_pipeline,
             "batch_ask": self.batch_ask,
+            "sqlite_path": str(self.sqlite_path),
+            "crm_webhook": bool(self.crm_webhook_url),
         }
 
 

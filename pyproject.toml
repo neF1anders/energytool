@@ -16,6 +16,14 @@ dependencies = [
 [project.scripts]
 energytool = "energytool.interface.cli:main"
 
+[project.optional-dependencies]
+web = [
+    "fastapi==0.143.2",
+    "pydantic==2.14.2",
+    "sqlalchemy==2.0.44",
+    "uvicorn==0.54.0",
+]
+
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
@@ -60,3 +68,4 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 addopts = "-ra -m 'not live'"
 markers = ["live: тесты с реальными моделями через OpenRouter (нужен .env)"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning"]
