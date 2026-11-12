@@ -29,3 +29,7 @@ htmlcov/
 # ide
 .idea/
 .vscode/
+
+# локальные артефакты разработки и eval (производные материалов)
+eval/data/
+.cache/

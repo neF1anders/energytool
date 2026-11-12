@@ -42,6 +42,12 @@ class Topic(StrEnum):
 Scope = Product | Topic
 
 
+def scope_for(product: Product) -> Scope:
+    """Область базы для продукта. Оба типа солнечных станций описаны в одном файле
+    (23-solar), поэтому гибрид ищется в области SOLAR_GRID."""
+    return Product.SOLAR_GRID if product is Product.SOLAR_HYBRID else product
+
+
 # --- раздел базы ------------------------------------------------------------------------------
 
 

@@ -24,6 +24,7 @@ from energytool.domain.knowledge import (
     Snippet,
     TextSnippet,
     Topic,
+    scope_for,
 )
 from energytool.domain.lead import Brief, Contact, Lead
 from energytool.domain.policy import PolicyDecision, Thresholds
@@ -88,4 +89,5 @@ __all__ = [
     "TextSnippet",
     "Thresholds",
     "Topic",
+    "scope_for",
 ]
