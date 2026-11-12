@@ -64,7 +64,7 @@ src/energytool/
     handle_turn.py             # use case: один ход веб-чата
     answer_question.py         # use case: один вопрос этапа 1 (stateless)
     submit_lead.py             # use case: заявка + бриф
-    trace.py                   # TurnTrace — DTO телеметрии
+    trace.py                   # TurnTrace — DTO телеметрии; сборщик вызовов LLM за ход [M0]
   infrastructure/
     config.py                  # env → Settings
     llm/gateway.py  llm/extractor.py  llm/responder.py  llm/prompts.py
@@ -72,12 +72,15 @@ src/energytool/
     kb/loader.py  kb/splitter.py  kb/tagmap.py                 # знание о структуре базы Energytool
     index/memory_store.py  index/bm25.py  index/vectors.py  index/factory.py   # in-memory, bm25s, numpy
     storage/sqlite_sessions.py  storage/leads.py  crm_webhook.py
-    telemetry.py
+    logs.py                    # настройка logging, JSON, маскирование ПДн, контекст хода [M0]
+    telemetry.py               # порт Telemetry → лог (turn_trace) [M0]
   interface/
     http/app.py  http/routes.py  http/schemas.py
     batch/run.py               # логика solution.py
     web/static/                # виджет
+    cli.py                     # dev-команды: ping [M0]
   bootstrap.py                 # composition root: Settings → адаптеры → use cases
+  __main__.py                  # uv run python -m energytool <команда> [M0]
 solution.py                    # 5 строк: from energytool.interface.batch.run import main
 tools/build_submission.py      # плоская сборка ZIP (раздел 13)
 eval/                          # стенды: retrieval, ответы, анкета (раздел 12)
