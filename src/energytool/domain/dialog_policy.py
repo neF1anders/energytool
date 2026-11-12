@@ -143,7 +143,7 @@ def _transition(
     if current is D.SUBMITTED:
         return D.SUBMITTED, "lead already submitted"
     if mode == "chat":
-        if current is D.CONTACT and contact_complete(state):
+        if contact_complete(state):
             return D.SUBMITTED, "contact complete"
         if extraction.wants_contact or extraction.intent is Intent.CONTACT:
             return D.CONTACT, "client wants contact"

@@ -165,3 +165,13 @@ def test_discovery_asks_common_or_shared_fields() -> None:
     slot = go(b=NONE).next_slot
     spec = REG.get(slot or "")
     assert spec.common or sum(1 for w in spec.weights.values() if w > 0) >= 2
+
+
+def test_full_contacts_in_one_message_submit_from_any_state() -> None:
+    contact: dict[str, SlotScalar] = {
+        "contact_name": "Иван",
+        "company": "Х",
+        "phone": "89123456789",
+        "pd_consent": True,
+    }
+    assert go(contact, dialog=D.READY).dialog_to is D.SUBMITTED
