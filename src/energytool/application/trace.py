@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
@@ -66,3 +69,28 @@ class TurnTrace:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+# --- сбор вызовов моделей за ход ---------------------------------------------------------------
+# Адаптеры LLM (infrastructure) сообщают о вызовах через record_llm_call, а use case
+# собирает их в TurnTrace, не зная про httpx и gateway. Сборщик живёт в ContextVar,
+# поэтому ходы в разных потоках пула не смешиваются.
+
+_llm_calls: ContextVar[list[LlmCall] | None] = ContextVar("llm_calls", default=None)
+
+
+@contextmanager
+def collecting_llm_calls() -> Iterator[list[LlmCall]]:
+    calls: list[LlmCall] = []
+    token = _llm_calls.set(calls)
+    try:
+        yield calls
+    finally:
+        _llm_calls.reset(token)
+
+
+def record_llm_call(call: LlmCall) -> None:
+    """Вне collecting_llm_calls вызов не копится (он всё равно есть в логе)."""
+    calls = _llm_calls.get()
+    if calls is not None:
+        calls.append(call)

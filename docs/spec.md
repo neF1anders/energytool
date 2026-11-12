@@ -300,6 +300,12 @@ next_slot = argmax(value); None, если ничего не осталось и�
 ### 8.1 LLM Gateway — `llm/gateway.py`
 httpx-клиент к OpenAI-совместимому прокси: `chat/completions`, `embeddings`, `rerank`. `llm/embedder.py` и `llm/reranker.py` — тонкие реализации портов `Embedder`, `Reranker` поверх gateway. Ретраи на 429/5xx с экспоненциальной задержкой (максимум 3), таймауты (chat 30 с, embed/rerank 10 с), общий семафор по `MAX_WORKERS`, замер времени и токенов в `TurnTrace`. Thinking-режим Qwen выключен, температура 0–0.2.
 
+Реализация **[M0]**:
+- повторяются timeout, сетевая ошибка, HTTP 408/409/425/429/5xx; пауза `0.5·2^n` с, `Retry-After` учитывается (не дольше 8 с); `LLM_MAX_RETRIES` (по умолчанию 3). Прочие 4xx (например, 401 `token_not_found_in_db`) не повторяются;
+- ошибки: `LlmUnavailableError` (повторы исчерпаны), `LlmRequestError` (4xx, нет адреса/ключа), `LlmResponseError` (ответ не по протоколу) — общий предок `LlmGatewayError`; на них строится деградация (§6.2);
+- каждый вызов — `LlmCall(kind, model, ms, tokens_in, tokens_out, retries, ok, error)` в лог и в сборщик хода `application.trace.collecting_llm_calls()` (ContextVar): use case собирает вызовы в `TurnTrace`, не зная про gateway;
+- `<think>…</think>` вырезается из ответа; пустой ответ логируется с `finish_reason`. Как выключать thinking на прокси и OpenRouter — проверяется вживую (§16), параметр передаётся через `extra_body`.
+
 ### 8.2 Extractor — `llm/extractor.py`
 Промпт: роль «извлекатель фактов», каталог полей (`id`, тип, варианты, единица; ~1k токенов), текущее состояние (заполненные поля), последние 6 реплик. Выход — JSON по схеме `Extraction`, сгенерированной из dataclass и реестра (`response_format=json_schema`, если прокси поддерживает; иначе JSON в тексте + валидация + один повтор). Требование: у каждого поля дословная `quote`.
 
