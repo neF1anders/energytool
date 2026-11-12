@@ -10,24 +10,24 @@ P = softmax(score / T) по неисключённым продуктам.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from energytool.domain.products import Product
 from energytool.domain.state import ConversationState
 
-EXCLUDE = float("-inf")   # правило «не подходит» исключает продукт
+EXCLUDE = float("-inf")  # правило «не подходит» исключает продукт
 
 
 @dataclass(frozen=True, slots=True)
 class Rule:
-    id: str                                        # "OREM_GATE"
+    id: str  # "OREM_GATE"
     product: Product
-    when: Callable[[ConversationState], bool]      # чистая функция от состояния
-    weight: float                                  # > 0, < 0 или EXCLUDE
-    explain: str                                   # «мощность {max_power_kw} кВт выше порога 750 кВт»
-    kb_source: str                                 # «20-products/21-orem › Порог доступа…»
-    flag: bool = False                             # только флаг в бриф, на балл не влияет
+    when: Callable[[ConversationState], bool]  # чистая функция от состояния
+    weight: float  # > 0, < 0 или EXCLUDE
+    explain: str  # «мощность {max_power_kw} кВт выше порога 750 кВт»
+    kb_source: str  # «20-products/21-orem › Порог доступа…»
+    flag: bool = False  # только флаг в бриф, на балл не влияет
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +35,7 @@ class RuleHit:
     rule_id: str
     product: Product
     weight: float
-    text: str                                      # explain с подставленными значениями
+    text: str  # explain с подставленными значениями
     kb_source: str
     flag: bool = False
 
@@ -43,7 +43,7 @@ class RuleHit:
 @dataclass(frozen=True, slots=True)
 class ScoringParams:
     temperature: float = 2.0
-    decay: float = 0.7                             # λ для мягких сигналов
+    decay: float = 0.7  # λ для мягких сигналов
     mention_weight: float = 2.0
     retrieval_mass_weight: float = 1.0
 
@@ -52,7 +52,7 @@ class ScoringParams:
 class ProductScore:
     product: Product
     raw: float
-    probability: float                             # 0, если исключён
+    probability: float  # 0, если исключён
     excluded: bool
     hits: tuple[RuleHit, ...] = ()
 
@@ -64,8 +64,13 @@ class ScoreBoard:
     trace: tuple[RuleHit, ...] = field(default=())
 
     def ranked(self) -> tuple[ProductScore, ...]:
-        return tuple(sorted((s for s in self.scores if not s.excluded),
-                            key=lambda s: s.probability, reverse=True))
+        return tuple(
+            sorted(
+                (s for s in self.scores if not s.excluded),
+                key=lambda s: s.probability,
+                reverse=True,
+            )
+        )
 
     def probability(self, product: Product) -> float:
         return next((s.probability for s in self.scores if s.product is product), 0.0)

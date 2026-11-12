@@ -24,14 +24,14 @@ class Contact:
 class CandidateSummary:
     product: Product
     probability: float
-    reasons: tuple[str, ...]          # тексты сработавших правил
-    flags: tuple[str, ...] = ()       # «пограничный: ниже 1 млн кВт·ч/мес»
+    reasons: tuple[str, ...]  # тексты сработавших правил
+    flags: tuple[str, ...] = ()  # «пограничный: ниже 1 млн кВт·ч/мес»
 
 
 @dataclass(frozen=True, slots=True)
 class ExcludedSummary:
     product: Product
-    reason: str                       # «поиск потерь: не для промышленных потребителей»
+    reason: str  # «поиск потерь: не для промышленных потребителей»
     kb_source: str
 
 
@@ -43,9 +43,9 @@ class Brief:
     pain: str
     candidates: tuple[CandidateSummary, ...]
     excluded: tuple[ExcludedSummary, ...]
-    slots: tuple[SlotValue, ...]                  # в порядке пунктов опросного листа
-    missing: tuple[str, ...]                      # slot_id обязательных, но пустых
-    documents_to_prepare: tuple[str, ...]         # из DOCUMENT-полей и 03-calculation
+    slots: tuple[SlotValue, ...]  # в порядке пунктов опросного листа
+    missing: tuple[str, ...]  # slot_id обязательных, но пустых
+    documents_to_prepare: tuple[str, ...]  # из DOCUMENT-полей и 03-calculation
     transcript_turns: int
 
 
@@ -53,5 +53,5 @@ class Brief:
 class Lead:
     id: str
     brief: Brief
-    text: str                         # человекочитаемый бриф
-    payload: dict                     # JSON для CRM
+    text: str  # человекочитаемый бриф
+    payload: dict[str, object]  # JSON для CRM

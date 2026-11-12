@@ -28,8 +28,8 @@ RRF) — там же. Деградация: reranker=None → ранжирова
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from energytool.application.build_index import KnowledgeIndex
 from energytool.application.ports import Embedder, Reranker
@@ -40,8 +40,10 @@ from energytool.domain.knowledge import Evidence, KnowledgeQuery, KnowledgeResul
 class Candidates:
     """Промежуточное состояние пайплайна."""
 
-    allowed: frozenset[str] | None = None                                     # None = вся база
-    lists: dict[str, list[tuple[str, float]]] = field(default_factory=dict)   # "bm25:0", "dense:0" → ранжирование
+    allowed: frozenset[str] | None = None  # None = вся база
+    lists: dict[str, list[tuple[str, float]]] = field(
+        default_factory=dict
+    )  # "bm25:0", "dense:0" → ранжирование
     fused: list[tuple[str, float]] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     below_floor: bool = False
@@ -63,7 +65,7 @@ Stage = Callable[[Candidates, Ctx], Candidates]
 @dataclass(frozen=True, slots=True)
 class PipelineConfig:
     name: str
-    stages: tuple[Stage, ...]          # по умолчанию retrieval_stages.DEFAULT
+    stages: tuple[Stage, ...]  # по умолчанию retrieval_stages.DEFAULT
     rrf_k: int = 60
 
 

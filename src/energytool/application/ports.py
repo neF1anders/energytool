@@ -5,9 +5,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Iterable, Protocol, Sequence
+from typing import TYPE_CHECKING, Protocol
 
 from energytool.domain.extraction import Extraction
 from energytool.domain.knowledge import Chunk, Scope, SectionKind
@@ -26,7 +27,9 @@ if TYPE_CHECKING:
 class FactExtractor(Protocol):
     """LLM #1: реплики → факты в JSON с цитатами."""
 
-    def extract(self, history: Sequence[Message], state: ConversationState, catalog: Sequence[SlotSpec]) -> Extraction: ...
+    def extract(
+        self, history: Sequence[Message], state: ConversationState, catalog: Sequence[SlotSpec]
+    ) -> Extraction: ...
 
 
 class ReplyWriter(Protocol):
@@ -47,7 +50,9 @@ class Embedder(Protocol):
 class Reranker(Protocol):
     """Qwen3 Reranker 8B через прокси. (индекс документа, скор) по убыванию."""
 
-    def rerank(self, query: str, documents: Sequence[str], top_n: int) -> list[tuple[int, float]]: ...
+    def rerank(
+        self, query: str, documents: Sequence[str], top_n: int
+    ) -> list[tuple[int, float]]: ...
 
 
 # --- база знаний: хранилище и индексы ---------------------------------------------------------
@@ -58,26 +63,34 @@ class ChunkStore(Protocol):
 
     def all(self) -> Sequence[Chunk]: ...
     def get(self, ids: Iterable[str]) -> Sequence[Chunk]: ...
-    def where(self, scopes: frozenset[Scope] | None = None, kinds: frozenset[SectionKind] | None = None) -> Sequence[Chunk]: ...
+    def where(
+        self, scopes: frozenset[Scope] | None = None, kinds: frozenset[SectionKind] | None = None
+    ) -> Sequence[Chunk]: ...
 
 
 class LexicalIndex(Protocol):
     """BM25. (chunk_id, score) по убыванию; allowed=None — весь корпус."""
 
-    def search(self, text: str, k: int, allowed: frozenset[str] | None = None) -> list[tuple[str, float]]: ...
+    def search(
+        self, text: str, k: int, allowed: frozenset[str] | None = None
+    ) -> list[tuple[str, float]]: ...
 
 
 class VectorIndex(Protocol):
     """Плотный поиск. (chunk_id, score) по убыванию."""
 
-    def search(self, vector: Sequence[float], k: int, allowed: frozenset[str] | None = None) -> list[tuple[str, float]]: ...
+    def search(
+        self, vector: Sequence[float], k: int, allowed: frozenset[str] | None = None
+    ) -> list[tuple[str, float]]: ...
 
 
 class IndexFactory(Protocol):
     """Строит хранилище и индексы из размеченных разделов. Сейчас in-memory + numpy + bm25s;
     позже FAISS/Chroma/внешний сервис — меняется только эта реализация."""
 
-    def build(self, chunks: Sequence[Chunk], vectors: Sequence[Sequence[float]]) -> tuple[ChunkStore, LexicalIndex, VectorIndex]: ...
+    def build(
+        self, chunks: Sequence[Chunk], vectors: Sequence[Sequence[float]]
+    ) -> tuple[ChunkStore, LexicalIndex, VectorIndex]: ...
 
 
 # --- база знаний: источник и разметка (знание о структуре базы Energytool) ---------------------
@@ -85,14 +98,14 @@ class IndexFactory(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SourceFile:
-    path: str                      # "20-products/21-orem.md"
+    path: str  # "20-products/21-orem.md"
     text: str
 
 
 @dataclass(frozen=True, slots=True)
 class RawSection:
     file: str
-    headings: tuple[str, ...]      # («Выход на ОРЭМ», «Кому подходит», «Порог доступа»)
+    headings: tuple[str, ...]  # («Выход на ОРЭМ», «Кому подходит», «Порог доступа»)
     body: str
 
 
@@ -119,7 +132,7 @@ class SectionTagger(Protocol):
 
 class SessionRepo(Protocol):
     def load(self, session_id: str) -> ConversationState | None: ...
-    def save(self, state: ConversationState, trace: "TurnTrace") -> None: ...
+    def save(self, state: ConversationState, trace: TurnTrace) -> None: ...
 
 
 class LeadSink(Protocol):
@@ -127,7 +140,7 @@ class LeadSink(Protocol):
 
 
 class Telemetry(Protocol):
-    def record(self, trace: "TurnTrace") -> None: ...
+    def record(self, trace: TurnTrace) -> None: ...
 
 
 class Clock(Protocol):

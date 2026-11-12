@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Mapping
 
 from energytool.domain.products import Product
 
 
 class SlotType(StrEnum):
     TEXT = "text"
-    NUMBER = "number"          # всегда в базовой единице SlotSpec.unit
+    NUMBER = "number"  # всегда в базовой единице SlotSpec.unit
     INTEGER = "integer"
     BOOL = "bool"
-    CHOICE = "choice"          # одно значение из SlotSpec.choices
-    DOCUMENT = "document"      # наличие документа: см. DocumentStatus
+    CHOICE = "choice"  # одно значение из SlotSpec.choices
+    DOCUMENT = "document"  # наличие документа: см. DocumentStatus
 
 
 class DocumentStatus(StrEnum):
@@ -23,12 +23,12 @@ class DocumentStatus(StrEnum):
 
     HAVE = "have"
     NO = "no"
-    LATER = "later"            # «уточню», «соберу с бухгалтерией»
+    LATER = "later"  # «уточню», «соберу с бухгалтерией»
 
 
 class SlotStatus(StrEnum):
     FILLED = "filled"
-    DECLINED = "declined"      # «не знаю» / «не скажу» — считается закрытым для порога READY
+    DECLINED = "declined"  # «не знаю» / «не скажу» — считается закрытым для порога READY
     EMPTY = "empty"
 
 
@@ -41,19 +41,19 @@ class SlotSpec:
     """
 
     id: str
-    title: str                                     # подпись в брифе
+    title: str  # подпись в брифе
     type: SlotType
-    ask: str                                       # шаблон вопроса клиенту
-    why: str = ""                                  # короткое «зачем спрашиваем», часть фразы
-    unit: str | None = None                        # базовая единица (кВт, кВт·ч/мес, м²)
+    ask: str  # шаблон вопроса клиенту
+    why: str = ""  # короткое «зачем спрашиваем», часть фразы
+    unit: str | None = None  # базовая единица (кВт, кВт·ч/мес, м²)
     choices: tuple[str, ...] = ()
-    weights: Mapping[Product, float] = field(default_factory=dict)   # важность поля для продукта
+    weights: Mapping[Product, float] = field(default_factory=dict)  # важность поля для продукта
     required_for: frozenset[Product] = frozenset()
-    gating_for: frozenset[Product] = frozenset()   # без него нельзя решить, подходит ли продукт
-    common: bool = False                           # общий блок, спрашиваем независимо от лидера
-    contact: bool = False                          # спрашиваем только в CONTACT
-    opros_item: int | None = None                  # пункт «Опросного листа ОРЭМ»
-    kb_source: str | None = None                   # раздел базы, откуда взято поле
+    gating_for: frozenset[Product] = frozenset()  # без него нельзя решить, подходит ли продукт
+    common: bool = False  # общий блок, спрашиваем независимо от лидера
+    contact: bool = False  # спрашиваем только в CONTACT
+    opros_item: int | None = None  # пункт «Опросного листа ОРЭМ»
+    kb_source: str | None = None  # раздел базы, откуда взято поле
 
     def weight(self, product: Product) -> float:
         return self.weights.get(product, 0.0)
@@ -69,6 +69,6 @@ class SlotValue:
     slot_id: str
     value: SlotScalar | None
     status: SlotStatus
-    quote: str                 # дословная цитата клиента, подтверждённая Reducer
-    turn: int                  # номер хода, на котором записано
-    previous: "SlotValue | None" = None   # история правок
+    quote: str  # дословная цитата клиента, подтверждённая Reducer
+    turn: int  # номер хода, на котором записано
+    previous: SlotValue | None = None  # история правок
