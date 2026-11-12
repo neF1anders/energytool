@@ -22,9 +22,9 @@ from energytool.domain.extraction import Extraction, Intent, SlotUpdate
 from energytool.domain.products import Product
 from energytool.domain.slots import SlotScalar, SlotSpec, SlotStatus, SlotType
 from energytool.domain.state import ConversationState, Message, Role
+from energytool.infrastructure.labels import CHOICE_LABELS
 from energytool.infrastructure.llm.gateway import ChatMessage, LlmGateway
 from energytool.infrastructure.llm.prompts import (
-    CHOICE_LABELS,
     EXTRACTOR_SYSTEM,
     EXTRACTOR_USER,
     EXTRACTOR_VERSION,

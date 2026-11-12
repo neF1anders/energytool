@@ -13,6 +13,7 @@ from energytool.domain.contract import ContractRegistry
 from energytool.domain.lead import Brief
 from energytool.domain.products import Product
 from energytool.domain.slots import SlotStatus, SlotValue
+from energytool.infrastructure.labels import CHOICE_LABELS
 
 PRODUCT_NAMES: dict[Product, str] = {
     Product.OREM: "Выход на оптовый рынок",
@@ -131,4 +132,4 @@ def _format(value: object) -> str:
         return f"{int(value):,}".replace(",", " ")
     if isinstance(value, int | float):
         return f"{value:,}".replace(",", " ")
-    return str(value)
+    return CHOICE_LABELS.get(value, value) if isinstance(value, str) else str(value)

@@ -42,3 +42,4 @@ def test_bakery_brief() -> None:
     assert "Акт техприсоединения" not in " ".join(brief.documents_to_prepare)
     assert brief.documents_to_prepare
     assert brief.transcript_turns == 1
+    assert "site_kind" not in brief.missing  # солнце с вероятностью ~2% не даёт пробелов

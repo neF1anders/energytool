@@ -23,6 +23,7 @@ from energytool.application.ports import (
     Telemetry,
 )
 from energytool.application.qualification import Qualifier, StepResult
+from energytool.application.submit_lead import THANKS
 from energytool.application.trace import TurnTrace, collecting_llm_calls
 from energytool.domain.contract import ContractRegistry
 from energytool.domain.extraction import Extraction, Intent
@@ -62,6 +63,8 @@ class HandleTurn:
             extraction = self._extract(state, text, trace)
             step = self.qualifier.step(state, extraction, text, "chat", trace)
             reply = self._write(step, trace)
+            if _just_submitted(step):
+                reply = Reply(text=THANKS, used_llm=False, evidence_ids=reply.evidence_ids)
             lead_id = self._submit(step, trace)
         trace.llm_calls.extend(llm_calls)
         final = replace(
@@ -107,11 +110,7 @@ class HandleTurn:
         return reply
 
     def _submit(self, step: StepResult, trace: TurnTrace) -> str | None:
-        entered = (
-            step.decision.dialog_to is DialogState.SUBMITTED
-            and step.decision.dialog_from is not DialogState.SUBMITTED
-        )
-        if not entered or self.submit_lead is None:
+        if not _just_submitted(step) or self.submit_lead is None:
             return None
         try:
             lead_id = self.submit_lead(step)
@@ -121,3 +120,10 @@ class HandleTurn:
             return None
         logger.info("lead submitted", extra={"data": {"lead_id": lead_id}})
         return lead_id
+
+
+def _just_submitted(step: StepResult) -> bool:
+    return (
+        step.decision.dialog_to is DialogState.SUBMITTED
+        and step.decision.dialog_from is not DialogState.SUBMITTED
+    )

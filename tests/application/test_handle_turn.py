@@ -142,6 +142,7 @@ def test_bakery_from_pain_to_lead() -> None:
     r4 = turn("s1", "Иван Петров, +7 912 345-67-89, Хлебозавод №1, согласен")
     assert r4.dialog is DialogState.SUBMITTED
     assert r4.lead_id == "lead-1"
+    assert r4.reply.text.startswith("Спасибо! Заявка принята")
     assert leads[0].board.ranked()[0].product is Product.OREM
 
     state = sessions.states["s1"]

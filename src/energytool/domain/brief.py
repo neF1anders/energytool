@@ -17,6 +17,8 @@ from energytool.domain.slots import DocumentStatus, SlotStatus, SlotType, SlotVa
 from energytool.domain.state import ConversationState, Role
 
 BRIEF_CANDIDATES = 3
+# пробелы и документы — только по реальным кандидатам (как Thresholds.candidate_probability)
+ACTIVE_PROBABILITY = 0.25
 
 
 def build(
@@ -35,8 +37,8 @@ def build(
         candidates=candidates,
         excluded=_excluded(board),
         slots=_slots(state, registry),
-        missing=_missing(state, registry, [c.product for c in candidates]),
-        documents_to_prepare=_documents(state, registry, [c.product for c in candidates]),
+        missing=_missing(state, registry, _active(candidates)),
+        documents_to_prepare=_documents(state, registry, _active(candidates)),
         transcript_turns=sum(1 for m in state.history if m.role is Role.USER),
     )
 
@@ -117,3 +119,8 @@ def _documents(
         and state.value(spec.id) != DocumentStatus.HAVE.value
     ]
     return tuple(dict.fromkeys(docs))
+
+
+def _active(candidates: tuple[CandidateSummary, ...]) -> list[Product]:
+    active = [c.product for c in candidates if c.probability >= ACTIVE_PROBABILITY]
+    return active or [c.product for c in candidates[:1]]
