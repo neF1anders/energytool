@@ -1,0 +1,21 @@
+# Одна команда: docker compose up --build
+# Перед запуском: cp .env.example .env (ключ и модель), положить knowledge-base.zip в ./data/
+services:
+  app:
+    build: .
+    image: energytool-assistant:latest
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATA_DIR: /app/data
+      SQLITE_PATH: /app/var/energytool.sqlite
+    volumes:
+      - ./data:/app/data:ro
+      - energytool-var:/app/var
+    restart: unless-stopped
+
+volumes:
+  energytool-var:
