@@ -1,6 +1,6 @@
 # Ассистент-квалификатор Energytool — спецификация
 
-Статус: v0.5 · 2026-11-12 · M0–M3 готовы. Изменения по ходу разработки помечены **[Mn]**.
+Статус: v0.6 · 2026-11-12 · M0–M4 готовы. Изменения по ходу разработки помечены **[Mn]**.
 Диаграммы: [`docs/diagrams/`](diagrams/README.md) · сущности домена: [`src/energytool/domain/`](../src/energytool/domain/) · порты и use cases: [`src/energytool/application/`](../src/energytool/application/)
 
 ---
@@ -195,7 +195,7 @@ next_slot = argmax(value); None, если ничего не осталось и�
 - `decide(...)` + отдельная `after_retrieval(decision, below_floor, mode)`: `below_floor` известен только после ретрива (шаг ⑤ после ④), поэтому переход «ответа в базе нет → CONTACT» делается второй функцией; в batch только пометка в `reason`.
 - Порядок проверок в чате: SUBMITTED остаётся; CONTACT + контакты полные → SUBMITTED; `wants_contact`/`Intent.CONTACT` → CONTACT; CONTACT держится до заполнения; `OUT_OF_SCOPE` → CONTACT (+ pinned «Когда требуется специалист»); 8 ходов без прогресса → CONTACT; READY после показанного призыва → NO_CONTACT (клиент продолжил без контакта); NO_CONTACT держится. Затем DISCOVERY/QUALIFY/READY по лидеру и порогу полноты; в batch READY не наступает (остаётся QUALIFY).
 - Гистерезис: прежний лидер сохраняется, пока он кандидат (P ≥ 0.25) и новый не оторвался на `leader_margin`.
-- `contact_complete`: ФИО, компания, телефон (10 цифр, опционально `+7`/`8`), `pd_consent is True`. В CONTACT `next_slot` — первое недостающее из `contact_name → phone → company → pd_consent`.
+- `contact_complete`: ФИО, компания, телефон (10 цифр, опционально `+7`/`8`), `pd_consent is True`.  Полные контакты переводят в SUBMITTED из любого состояния чата (клиент может прислать всё одним сообщением) **[M4]**. В CONTACT `next_slot` — первое недостающее из `contact_name → phone → company → pd_consent`.
 - `next_slot`: `value(slot)` по формуле; пул DISCOVERY — общий блок + поля с весом у ≥ 2 продуктов; общие поля без весов (`segment`, `goal`, `pain`) получают +0.5, чтобы бот сначала понял тип клиента и задачу; без кандидатов берутся два лучших продукта доски.
 - `pinned_sections` — id разделов `03-calculation › Какие сведения могут понадобиться › Для <продукта>` (READY/NO_CONTACT) и `02 › Когда требуется специалист` (вне темы); id строятся так же, как в `BuildKnowledgeIndex`.
 ### 5.5 Параметры правил
@@ -244,6 +244,8 @@ next_slot = argmax(value); None, если ничего не осталось и�
 
 Деградация: Extractor упал или таймаут → `Extraction(intent=QUESTION, search_query=последняя реплика)`, состояние не меняется. Responder упал → ответ из лучшего Evidence + шаблон вопроса. Ретрив упал → «уточню у специалиста» + предложение заявки. Ни один ход не возвращает пустой ответ.
 
+
+Реализация **[M4]**: `application/handle_turn.py` + общий шаг `application/qualification.py` (`Qualifier.step`: reduce → score → decide → build_query → retrieve → after_retrieval → `ReplyPlan` → `_advance`: `asked[next_slot]+1`, `last_cta_turn`, `leader_history`, `dialog`). Номер хода и реплики (клиента и бота) добавляет `HandleTurn`. План: `answer_question` — только при `need_facts` (иначе шаблон без LLM: подтверждение + вопрос анкеты), `acknowledge` — тексты правил, впервые сработавших на этом ходе (до 2), `offer_contact` → фиксированная фраза-призыв добавляется кодом после текста LLM. ⑦ — внедряемый `submit_lead(step) → lead_id` (реализация — M6), его отказ не ломает ход (`lead_failed`). Каждый шаг замеряется в `TurnTrace.timings_ms` (включая `retrieve.<стадия>`). Сквозной тест «хлебозавод: боль → мощность → объём/регион/сбыт → контакты → SUBMITTED» — `tests/application/test_handle_turn.py`; он же нашёл, что полные контакты одним сообщением из READY должны сразу давать SUBMITTED (исправлено в `dialog_policy`).
 ### 6.3 AnswerQuestion — один вопрос этапа 1
 
 Ячейка `question` → `Message[]` (разбор `Пользователь: … / Ассистент: …`). Extractor вызывается один раз по всей истории, состояние собирается из одного `Extraction`. Дальше шаги ②–⑥ с `mode="batch"`. Без Session Store, Brief, CONTACT.
@@ -256,6 +258,8 @@ next_slot = argmax(value); None, если ничего не осталось и�
 - Режимы `AnswerMode.FULL` / `NO_LLM` (ретрив + шаблон). Ошибка ретрива → пустой Evidence + ответ (`retrieval_failed`), любая ошибка кейса в раннере → запасной ответ. `TurnTrace` на каждый кейс: тайминги, вызовы LLM, Evidence, деградации.
 - Бюджет M2: один порог `RUN_BUDGET_SEC` (1080 с) → `NO_LLM`; порог «быстрого пути без Extractor» (15 мин) появится в M4 вместе с Extractor.
 
+
+Реализация **[M4]**: режимы `AnswerMode.FULL` (Extractor по всей истории → `Qualifier.step(mode="batch")`, `need_facts` в батче принудительно `True`), `FAST` (наивный путь M2), `NO_LLM`. `Deadline`: `FAST_PATH_SEC` (900) → FAST, `RUN_BUDGET_SEC` (1080) → NO_LLM. Отказ Extractor → FAST для этого кейса (`extractor_failed`). Конвейер и вопрос анкеты в батче — настройки `BATCH_PIPELINE` (`naive`|`full`) и `BATCH_ASK`; умолчания выбраны по eval (§12).
 ### 6.4 SubmitLead
 
 Валидация контактов (телефон по маске, согласие обязательно) → `brief.build` → рендер текста и JSON → `LeadSink.send` → запись в `leads`. Бриф уходит синхронно с заявкой: перезвон быстрый.
@@ -295,6 +299,8 @@ next_slot = argmax(value); None, если ничего не осталось и�
 | `need_facts=False` | только `IdSnippet` — без поиска и вызовов моделей |
 | `top_k, fallback_k, max_tokens`, `Thresholds.rerank_floor` | `BudgetSnippet` |
 
+
+Реализация **[M4]**: `build_query(extraction, state, decision, budget, *, restrict_scope=True)` — бюджет собирает вызывающий (`Qualifier` подставляет `min_rerank_score = Thresholds.rerank_floor`), доска не нужна: кандидаты и лидер уже в решении. Солнечные продукты переводятся в область через `scope_for`. `restrict_scope=False` в батче: у одиночного вопроса нет накопленного контекста, и узкая область чаще вредит, поэтому лидер только бустится и закрепляется. Пустой `search_query` → последняя реплика клиента.
 ### 7.4 Стадии по умолчанию
 
 `parse → by_id → scope → recall (BM25 ∥ dense по каждому тексту) → fuse (RRF, k=60) → boost → rerank → pin → fallback → pack`. Стадия — чистая функция `(Candidates, Ctx) → Candidates`, конфигурация — кортеж стадий (`PipelineConfig`). Эксперимент = другой кортеж или параметры.
@@ -368,6 +374,8 @@ httpx-клиент к OpenAI-совместимому прокси: `chat/comple
 ### 8.2 Extractor — `llm/extractor.py`
 Промпт: роль «извлекатель фактов», каталог полей (`id`, тип, варианты, единица; ~1k токенов), текущее состояние (заполненные поля), последние 6 реплик. Выход — JSON по схеме `Extraction`, сгенерированной из dataclass и реестра (`response_format=json_schema`, если прокси поддерживает; иначе JSON в тексте + валидация + один повтор). Требование: у каждого поля дословная `quote`.
 
+
+Реализация **[M4]** (`extractor-v1`): каталог строится из реестра — `id | подпись | тип | варианты (id=смысл) / единица`, подписи вариантов в `prompts.CHOICE_LABELS`. `response_format` не используется: JSON вырезается из текста (`{…}`), элементы валидируются поштучно (неизвестный слот, не-скаляр, неизвестный продукт — отбрасываются), битый JSON — один повтор, затем `ExtractionParseError` (наследник `ExternalServiceError`) → деградация use case. Температура 0, `max_tokens=900`. Наблюдение на живом прогоне: модель сама пересчитывает «1,1 МВт» в 1100 и всё равно пишет `unit="МВт"` — поэтому reducer берёт число и множитель из **цитаты клиента**, а уже пересчитанное значение (×10³/×10⁶ от числа цитаты) не умножает повторно (5.2).
 ### 8.3 Responder — `llm/responder.py`
 Шаблон без LLM, если вопроса клиента нет: `acknowledge + ask(+why)`. Иначе LLM: роль консультанта Energytool, «мы», факты только из Evidence, формат «прямой ответ → 1–2 факта → оговорка → один вопрос по плану», 30–70 слов, до 150. Few-shot: 3–4 пары из демо. Пост-проверка кодом: один вопросительный знак максимум в части вопроса, длина, нет чисел, которых нет в Evidence (regex по числам).
 
@@ -468,6 +476,16 @@ GET  /healthz
 - `eval/retrieval/` — раздел 7.6.
 - `eval/answers/`: локальный pairwise-судья (Qwen через OpenRouter) против `sample_submission` на 18 демо + синтетике; метрики как у платформы: 0.7·MatchRate + 0.3·WinRate.
   **[M2]** Стенд: `uv run --env-file .env python -m eval.answers --team <submission.csv>`; судья `judge-v1` (промпт наш — платформенный неизвестен, цифры для сравнения версий между собой). Baseline — учебный пример организаторов, прогнанный на демо локально (`eval/data/baseline/`; на OpenRouter ему нужен явный `LLM_BASE_URL` и `reasoning.enabled=false`, иначе пустые ответы). Санити-проверка: baseline против себя = 0.500. Результат M2 (наивный путь, 18 демо): **Score 0.896**, MatchRate 0.875, WinRate 0.944 (17/1/0). Единственный проигрыш — demo 15 («с чего начать»: ответ общий, без связки «платформа + фото»).
+  **[M4] M2 против M4 на демо** (18 вопросов, тот же судья; «A vs B» — Score ответа A при B в роли baseline):
+
+  | Сравнение | Score | W/L/T |
+  |---|---|---|
+  | против учебного baseline: naive (M2) / full+ask / full без ask | 0.896 / 0.906 / 0.884 | 17/1, 17/1, 16/2 |
+  | full + вопрос анкеты против naive | 0.446 | 6/9/3 |
+  | full без вопроса анкеты против naive | 0.505 | 8/7/3 |
+  | full + вопрос против full без вопроса | 0.469 | 6/7/5 |
+
+  Решение: по умолчанию в батче `BATCH_PIPELINE=naive`, `BATCH_ASK=false` — на одиночных вопросах полный конвейер качества не добавляет, навязанный вопрос анкеты слегка вредит, а время вдвое больше (30 с против 13 с на 18 вопросов, 4 потока). Полный конвейер — основной путь веб-чата (анкета, лидер, заявка). Вариант для платформы собирается без правки кода: `tools/build_submission.py --env BATCH_PIPELINE=full`.
 - `eval/dialog/`: 20–30 персон с эталонной анкетой (легенда хлебозавода — первая), клиента играет LLM с «не знаю», путаницей терминов и сменой темы. Метрики: полнота и точность полей, ходов до READY, доля ложных полей, верный ли лидер.
 
 ## 13. Сборка сабмита
@@ -522,7 +540,7 @@ Git: ветки `feat/…`, `fix/…`; один PR — один этап раз�
 | M1 ✅ | База знаний: `BuildKnowledgeIndex`, `RetrieveKnowledge` + стадии, адаптеры kb/index/llm, `eval/retrieval` | recall@4 и MRR на FAQ-наборе посчитаны для 2+ конфигураций |
 | M2 ✅ | Наивный путь этапа 1: AnswerQuestion = ретрив + Responder, сборка ZIP | первый сабмит, локальный судья против sample_submission |
 | M3 ✅ | Domain-сервисы: reducer, rules, scorer, dialog_policy, brief + тесты | все переходы автомата покрыты |
-| M4 | Extractor + полный HandleTurn, batch на полном конвейере | сравнение M2 vs M4 на eval ответов |
+| M4 ✅ | Extractor + полный HandleTurn, batch на полном конвейере | сравнение M2 vs M4 на eval ответов |
 | M5 | HTTP, SQLite, виджет, режим отладки | путь «вопрос → заявка» проходит руками |
 | M6 | SubmitLead, бриф, мок CRM, страница заявок | бриф хлебозавода совпадает с ожидаемым |
 | M7 | Docker, README, `.env.example`, `eval/dialog` | одна команда поднимает всё |
