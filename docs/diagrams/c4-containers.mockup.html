@@ -1,0 +1,369 @@
+<title>Бэкенд квалификатора Energytool</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: C4 component diagram first (wide, scrolls inside its frame), then one section per question: data, scoring, loop, retrieval timing. */
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --fg:#1b1f27; --muted:#5d6675; --line:#d4d9e1;
+  --accent:#e30613; --accent-soft:#fde8e9;
+  --comp:#2a5bd7; --comp-soft:#e9effc; --store:#6b4fd0; --store-soft:#efeafc;
+  --ext:#6f7785; --ext-soft:#eceef2; --llm:#b25e00; --llm-soft:#fbf0dc;
+  --ok:#1f8a4c; --ok-soft:#e3f4ea; --bad:#c0262d; --bad-soft:#fbe6e7;
+  --f-text:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12151b; --panel:#1a1e26; --fg:#e7eaf0; --muted:#9aa3b2; --line:#323946;
+  --accent:#ff4b55; --accent-soft:#3a1a1d; --comp:#86a8ff; --comp-soft:#1c2640; --store:#b49cff; --store-soft:#271f40;
+  --ext:#a3abb8; --ext-soft:#252a33; --llm:#f0b459; --llm-soft:#3a2c14;
+  --ok:#5fd08e; --ok-soft:#173225; --bad:#ff7a80; --bad-soft:#3a1a1d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151b; --panel:#1a1e26; --fg:#e7eaf0; --muted:#9aa3b2; --line:#323946;
+  --accent:#ff4b55; --accent-soft:#3a1a1d; --comp:#86a8ff; --comp-soft:#1c2640; --store:#b49cff; --store-soft:#271f40;
+  --ext:#a3abb8; --ext-soft:#252a33; --llm:#f0b459; --llm-soft:#3a2c14;
+  --ok:#5fd08e; --ok-soft:#173225; --bad:#ff7a80; --bad-soft:#3a1a1d; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-text);font-size:15px;line-height:1.5}
+.wrap{max-width:1240px;margin:0 auto;padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:44px}
+h1{font-size:1.9rem;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font-size:1.3rem;margin:0;text-wrap:balance}
+h3{font-size:1rem;margin:0}
+p{margin:0}
+.lead{color:var(--muted);max-width:72ch}
+.eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+code,.mono{font-family:var(--f-mono);font-size:.82em}
+section{display:flex;flex-direction:column;gap:14px}
+.frame{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.frame svg{display:block;min-width:1120px;width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.8rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:10px;border-radius:2px;display:inline-block;border:1.5px solid}
+
+/* svg box text */
+.bx{font-family:var(--f-text);color:var(--fg);font-size:12px;line-height:1.35;padding:7px 9px;height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.bx b{font-size:13px}
+.bx i{font-style:normal;color:var(--muted);font-size:10.5px}
+.bx ol{margin:2px 0 0;padding-left:16px;display:flex;flex-direction:column;gap:1px}
+.lbl{font-family:var(--f-text);font-size:11px;fill:var(--muted)}
+.num{font-family:var(--f-mono);font-size:11px;font-weight:600;fill:var(--accent)}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media (max-width:820px){.grid2{grid-template-columns:1fr}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.box ul,.box ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.qa{border-left:3px solid var(--accent);padding:2px 0 2px 12px;max-width:80ch}
+.qa b{display:block}
+.tbl{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;background:var(--bg)}
+tr:last-child td{border-bottom:none}
+td.n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.pos{color:var(--ok);font-weight:600}
+.neg{color:var(--bad);font-weight:600}
+.x{background:var(--bad-soft);color:var(--bad);font-weight:600;font-size:.75rem;padding:1px 6px;border-radius:4px;white-space:nowrap}
+pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;font-family:var(--f-mono);font-size:.78rem;line-height:1.55;margin:0}
+.states{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.85rem}
+.st{padding:5px 10px;border-radius:999px;background:var(--comp-soft);color:var(--comp);font-weight:600}
+.st.end{background:var(--ok-soft);color:var(--ok)}
+.st.side{background:var(--llm-soft);color:var(--llm)}
+.arr{color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted)}
+</style>
+
+<div class="wrap">
+<header style="display:flex;flex-direction:column;gap:8px">
+  <span class="eyebrow">Hack&amp;Change 2026 · MTS Energytool · C4, уровень 3</span>
+  <h1>Бэкенд ассистента-квалификатора</h1>
+  <p class="lead">Один ход диалога проходит фиксированный конвейер. Модель вызывается максимум дважды: извлечь факты и написать ответ. Всё остальное делает код: что спросить, когда идти в базу, какой продукт ведёт и когда пора в заявку.</p>
+</header>
+
+<section>
+  <h2>Компоненты бэкенда</h2>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--comp-soft);border-color:var(--comp)"></i>Компонент, код</span>
+    <span><i class="sw" style="background:var(--llm-soft);border-color:var(--llm)"></i>Компонент с вызовом LLM</span>
+    <span><i class="sw" style="background:var(--store-soft);border-color:var(--store)"></i>Хранилище</span>
+    <span><i class="sw" style="background:var(--ext-soft);border-color:var(--ext)"></i>Внешнее</span>
+    <span><b style="color:var(--accent)">①–⑦</b> порядок шагов одного хода</span>
+  </div>
+  <div class="frame">
+  <svg viewBox="0 0 1400 930" role="img" aria-label="C4 диаграмма компонентов бэкенда">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+    </defs>
+    <style>
+      .c{fill:var(--comp-soft);stroke:var(--comp);stroke-width:1.5}
+      .l{fill:var(--llm-soft);stroke:var(--llm);stroke-width:1.5}
+      .s{fill:var(--store-soft);stroke:var(--store);stroke-width:1.5}
+      .e{fill:var(--ext-soft);stroke:var(--ext);stroke-width:1.5}
+      .p{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+      .ln{stroke:var(--muted);stroke-width:1.4;fill:none}
+      .dl{stroke:var(--muted);stroke-width:1.3;fill:none;stroke-dasharray:5 4}
+      .bd{fill:none;stroke:var(--fg);stroke-width:1.2;stroke-dasharray:8 5;opacity:.55}
+    </style>
+
+    <!-- top row -->
+    <rect class="p" x="40" y="20" width="160" height="80" rx="40"/>
+    <foreignObject x="40" y="20" width="160" height="80"><div class="bx" xmlns="http://www.w3.org/1999/xhtml" style="align-items:center;justify-content:center;text-align:center"><b>Клиент</b><i>[Person] посетитель сайта</i></div></foreignObject>
+    <rect class="e" x="240" y="20" width="230" height="80" rx="6"/>
+    <foreignObject x="240" y="20" width="230" height="80"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Веб-виджет чата</b><i>[Container: JS, SSE]</i>чат, «Новый диалог», режим отладки</div></foreignObject>
+    <rect class="e" x="510" y="20" width="260" height="80" rx="6"/>
+    <foreignObject x="510" y="20" width="260" height="80"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>solution.py</b><i>[Container: батч этапа 1]</i>questions.csv → то же ядро без сессий → submission.csv</div></foreignObject>
+    <rect class="e" x="940" y="20" width="210" height="80" rx="6"/>
+    <foreignObject x="940" y="20" width="210" height="80"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>CRM (мок)</b><i>[External]</i>приём заявки и брифа</div></foreignObject>
+    <rect class="p" x="1190" y="20" width="170" height="80" rx="40"/>
+    <foreignObject x="1190" y="20" width="170" height="80"><div class="bx" xmlns="http://www.w3.org/1999/xhtml" style="align-items:center;justify-content:center;text-align:center"><b>Менеджер</b><i>[Person] пресейл</i></div></foreignObject>
+
+    <!-- boundary -->
+    <rect class="bd" x="20" y="135" width="1360" height="660" rx="10"/>
+    <text x="34" y="788" class="lbl" style="font-weight:600;fill:var(--fg)">Backend API  [Container: Python 3.11, FastAPI]</text>
+
+    <!-- row 1 -->
+    <rect class="c" x="50" y="170" width="240" height="90" rx="6"/>
+    <foreignObject x="50" y="170" width="240" height="90"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Chat API</b><i>[FastAPI router]</i>сессии, сообщения, SSE, /leads, /debug, сброс диалога</div></foreignObject>
+    <rect class="c" x="340" y="170" width="300" height="90" rx="6" style="stroke-width:2.5"/>
+    <foreignObject x="340" y="170" width="300" height="90"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Turn Controller</b><i>[Python, детерминированный конвейер]</i>гоняет шаги ①–⑦, таймауты и бюджет хода. LLM сам ничего не вызывает</div></foreignObject>
+    <rect class="s" x="690" y="170" width="230" height="90" rx="6"/>
+    <foreignObject x="690" y="170" width="230" height="90"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Session Store</b><i>[SQLite]</i>sessions, messages, state_snapshots (JSON на ход), leads, traces</div></foreignObject>
+    <rect class="c" x="1110" y="170" width="240" height="90" rx="6"/>
+    <foreignObject x="1110" y="170" width="240" height="90"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Brief Renderer</b><i>[шаблон]</i>текст + JSON из состояния и трассы правил</div></foreignObject>
+
+    <!-- row 2 -->
+    <rect class="l" x="50" y="330" width="240" height="100" rx="6"/>
+    <foreignObject x="50" y="330" width="240" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Extractor</b><i>[LLM #1, JSON-схема]</i>intent, слоты с цитатой клиента, упомянутые продукты, запрос для поиска</div></foreignObject>
+    <rect class="c" x="330" y="330" width="220" height="100" rx="6"/>
+    <foreignObject x="330" y="330" width="220" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>State Reducer</b><i>[Pydantic]</i>проверка цитаты, единицы (МВт→кВт), правки поверх старых значений</div></foreignObject>
+    <rect class="c" x="590" y="330" width="230" height="100" rx="6"/>
+    <foreignObject x="590" y="330" width="230" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Product Scorer</b><i>[движок правил]</i>prior сегмента + правила по слотам + затухающие сигналы → softmax, исключения</div></foreignObject>
+    <rect class="c" x="860" y="330" width="210" height="100" rx="6"/>
+    <foreignObject x="860" y="330" width="210" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Dialogue Policy</b><i>[конечный автомат]</i>нужен ли поиск, следующий слот, порог READY, призыв к заявке</div></foreignObject>
+    <rect class="l" x="1110" y="330" width="240" height="100" rx="6"/>
+    <foreignObject x="1110" y="330" width="240" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Responder</b><i>[LLM #2 или шаблон]</i>ответ в стиле эталонов + вопрос по слоту. Без вопроса клиента — шаблон, без LLM</div></foreignObject>
+
+    <!-- row 3 -->
+    <rect class="s" x="330" y="480" width="220" height="100" rx="6"/>
+    <foreignObject x="330" y="480" width="220" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Contract Registry</b><i>[Pydantic-модели, код]</i>слоты 6 продуктов: тип, обязательность, вес, шаблон вопроса</div></foreignObject>
+    <rect class="s" x="590" y="480" width="230" height="100" rx="6"/>
+    <foreignObject x="590" y="480" width="230" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Rule Table</b><i>[константы в .py]</i>~30 правил «условие → вес или исключение» со ссылкой на раздел базы</div></foreignObject>
+    <rect class="c" x="860" y="480" width="210" height="235" rx="6"/>
+    <foreignObject x="860" y="480" width="210" height="235"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Retriever</b><i>[numpy + bm25s]</i>
+      <ol>
+        <li>фильтр: продукт ∈ кандидаты ∪ {общее, энергетика}</li>
+        <li>BM25 + косинус bge-m3</li>
+        <li>RRF → top-20</li>
+        <li>реранкер → top-4</li>
+        <li>+ закреплённые: «Чего утверждать нельзя», «Не подходит, если»</li>
+        <li>+ top-2 без фильтра (страховка)</li>
+      </ol></div></foreignObject>
+    <rect class="c" x="1110" y="480" width="240" height="100" rx="6"/>
+    <foreignObject x="1110" y="480" width="240" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>LLM Gateway</b><i>[httpx, OpenAI API]</i>все вызовы моделей, в т.ч. Extractor: ретраи, таймауты, семафор, кэш эмбеддингов</div></foreignObject>
+
+    <!-- row 4 -->
+    <rect class="c" x="50" y="610" width="240" height="100" rx="6"/>
+    <foreignObject x="50" y="610" width="240" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Debug &amp; Telemetry</b><i>[пишет каждый шаг]</i>время шагов, чанки со скорами, сработавшие правила → режим отладки</div></foreignObject>
+    <rect class="c" x="330" y="610" width="220" height="100" rx="6"/>
+    <foreignObject x="330" y="610" width="220" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>KB Indexer</b><i>[на старте]</i>zip → чанки по ##/### → теги из ручной карты → эмбеддинги</div></foreignObject>
+    <rect class="s" x="590" y="610" width="230" height="100" rx="6"/>
+    <foreignObject x="590" y="610" width="230" height="100"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>KB Store</b><i>[таблица в памяти]</i>~235 чанков: id, file, path, product, kind, text, vec</div></foreignObject>
+
+    <!-- externals -->
+    <rect class="e" x="330" y="830" width="220" height="70" rx="6"/>
+    <foreignObject x="330" y="830" width="220" height="70"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>knowledge-base.zip</b><i>[DATA_DIR, 19 файлов .md]</i></div></foreignObject>
+    <rect class="e" x="880" y="830" width="170" height="70" rx="6"/>
+    <foreignObject x="880" y="830" width="170" height="70"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Qwen 27B</b><i>[LLM, прокси]</i></div></foreignObject>
+    <rect class="e" x="1070" y="830" width="150" height="70" rx="6"/>
+    <foreignObject x="1070" y="830" width="150" height="70"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>bge-m3</b><i>[эмбеддер]</i></div></foreignObject>
+    <rect class="e" x="1240" y="830" width="140" height="70" rx="6"/>
+    <foreignObject x="1240" y="830" width="140" height="70"><div class="bx" xmlns="http://www.w3.org/1999/xhtml"><b>Qwen3 Reranker 8B</b><i>[реранкер]</i></div></foreignObject>
+
+    <!-- arrows: top -->
+    <path class="ln" d="M200,60 L238,60" marker-end="url(#ah)"/>
+    <path class="ln" d="M330,100 L210,168" marker-end="url(#ah)"/>
+    <text x="276" y="128" class="lbl">POST /messages, SSE</text>
+    <path class="ln" d="M600,100 L600,168" marker-end="url(#ah)"/>
+    <text x="608" y="124" class="lbl">turn(history)</text>
+    <path class="ln" d="M1200,170 L1100,102" marker-end="url(#ah)"/>
+    <text x="1158" y="128" class="lbl">webhook</text>
+    <path class="ln" d="M1150,60 L1188,60" marker-end="url(#ah)"/>
+
+    <!-- row1 links -->
+    <path class="ln" d="M290,215 L338,215" marker-end="url(#ah)"/>
+    <path class="ln" d="M640,215 L688,215" marker-start="url(#ah)" marker-end="url(#ah)"/>
+    <text x="646" y="206" class="lbl">state</text>
+
+    <!-- bus -->
+    <path class="ln" d="M490,260 L490,298"/>
+    <path class="ln" d="M170,298 L1230,298"/>
+    <path class="ln" d="M170,298 L170,328" marker-end="url(#ah)"/><text x="176" y="320" class="num">①</text>
+    <path class="ln" d="M440,298 L440,328" marker-end="url(#ah)"/><text x="446" y="320" class="num">②</text>
+    <path class="ln" d="M705,298 L705,328" marker-end="url(#ah)"/><text x="711" y="320" class="num">③</text>
+    <path class="ln" d="M965,298 L965,328" marker-end="url(#ah)"/><text x="971" y="320" class="num">④</text>
+    <path class="ln" d="M1230,298 L1230,328" marker-end="url(#ah)"/><text x="1236" y="320" class="num">⑥</text>
+    <path class="ln" d="M1290,298 L1290,262" marker-end="url(#ah)"/><text x="1296" y="285" class="num">⑦</text><text x="1310" y="285" class="lbl">READY</text>
+    <path class="ln" d="M1230,298 L1290,298"/>
+
+    <!-- registry/rules -->
+    <path class="ln" d="M440,480 L440,432" marker-end="url(#ah)"/><text x="446" y="473" class="lbl">схема слотов</text>
+    <path class="ln" d="M705,480 L705,432" marker-end="url(#ah)"/><text x="711" y="473" class="lbl">правила</text>
+    <path class="dl" d="M530,480 L530,450 L900,450 L900,432" marker-end="url(#ah)"/>
+
+    <!-- policy → retriever → responder -->
+    <path class="ln" d="M965,430 L965,478" marker-end="url(#ah)"/><text x="971" y="462" class="num">⑤</text><text x="986" y="462" class="lbl">если нужны факты</text>
+    <path class="ln" d="M1070,500 L1150,432" marker-end="url(#ah)"/><text x="1080" y="470" class="lbl">контекст</text>
+    <path class="ln" d="M1070,550 L1108,540" marker-end="url(#ah)"/>
+    <path class="ln" d="M1230,430 L1230,478" marker-end="url(#ah)"/>
+    <path class="ln" d="M858,660 L822,660" marker-end="url(#ah)"/>
+    <path class="ln" d="M550,660 L588,660" marker-end="url(#ah)"/>
+
+    <!-- externals -->
+    <path class="ln" d="M400,830 L400,712" marker-end="url(#ah)"/><text x="406" y="780" class="lbl">при старте</text>
+    <path class="dl" d="M500,710 L500,760 L1160,760 L1160,828" marker-end="url(#ah)"/><text x="620" y="754" class="lbl">эмбеддинги чанков батчами (через Gateway)</text>
+    <path class="ln" d="M1130,580 L1130,805 L970,805 L970,828" marker-end="url(#ah)"/>
+    <path class="ln" d="M1200,580 L1200,828" marker-end="url(#ah)"/>
+    <path class="ln" d="M1290,580 L1310,828" marker-end="url(#ah)"/>
+    
+  </svg>
+  </div>
+  <p class="note">Пунктир от Contract Registry к Dialogue Policy: политика берёт из реестра веса и шаблоны вопросов. Для этапа 1 solution.py вызывает тот же контроллер, только состояние каждый раз собирается из истории в ячейке, а Session Store и Brief Renderer не участвуют.</p>
+</section>
+
+<section>
+  <h2>Один ход по шагам</h2>
+  <div class="tbl"><table>
+    <tr><th>Шаг</th><th>Компонент</th><th>Вход → выход</th><th>LLM</th></tr>
+    <tr><td>①</td><td>Extractor</td><td>последние 6 реплик + текущее состояние + список слотов кандидатов → JSON: <code>intent</code>, <code>slot_updates[{slot, value, quote}]</code>, <code>mentions</code>, <code>declined</code>, <code>wants_contact</code>, <code>search_query</code></td><td>да, короткий JSON</td></tr>
+    <tr><td>②</td><td>State Reducer</td><td>отбрасывает слот, если <code>quote</code> не найдена в тексте клиента (rapidfuzz ≥ 85). Нормализует единицы. Новое значение заменяет старое, история правок хранится</td><td>нет</td></tr>
+    <tr><td>③</td><td>Product Scorer</td><td>слоты + мягкие сигналы → баллы 6 продуктов, вероятности, исключения, трасса правил</td><td>нет</td></tr>
+    <tr><td>④</td><td>Dialogue Policy</td><td>состояние автомата, <code>need_facts</code>, <code>next_slot</code>, показывать ли призыв к заявке</td><td>нет</td></tr>
+    <tr><td>⑤</td><td>Retriever</td><td>только если <code>need_facts</code>. Запрос + фильтр по кандидатам → 4 чанка + закреплённые</td><td>эмбеддинг и реранк</td></tr>
+    <tr><td>⑥</td><td>Responder</td><td>есть вопрос клиента → LLM: ответ по чанкам + вопрос по <code>next_slot</code>. Нет вопроса → шаблон: короткое подтверждение из трассы правил + вопрос</td><td>да или нет</td></tr>
+    <tr><td>⑦</td><td>Brief Renderer</td><td>только при переходе в SUBMITTED</td><td>нет</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Данные: откуда, как режем, как достаём</h2>
+  <div class="qa"><b>Нужен ли векторный поиск, если есть фильтр по метаданным?</b>Фильтр отвечает на вопрос «в каком продукте искать». Он не отвечает, «какой раздел из 30 в файле ОРЭМ отвечает на этот вопрос». Внутри одного продукта нужен ранжир. Но это не векторная БД: после фильтра остаётся 40–80 чанков, косинус по ним считается numpy за миллисекунды, вектора лежат в памяти. bge-m3 нужен ради перефразов вроде «соседи воруют свет» или «счётчик крутит», где BM25 промахивается.</div>
+  <div class="grid2">
+    <div class="box">
+      <h3>Чанкинг: автоматически плюс ручная карта</h3>
+      <ul>
+        <li>Резать руками не нужно: база размечена заголовками. <b>235 разделов</b> уровня ## и ###, один раздел = один чанк, к тексту приклеен путь <code>файл › раздел › подраздел</code>.</li>
+        <li>Руками делаем <b>карту тегов</b>: <code>файл → продукт</code> и переопределения на уровне раздела. Около часа работы. Это словарь в <code>.py</code>, так что в ZIP этапа 1 он проходит как код, а не как данные.</li>
+        <li>Тег <code>kind</code> по заголовку: <code>faq</code>, <code>fits</code>, <code>not_fits</code>, <code>allowed_facts</code>, <code>forbidden</code>, <code>what_we_do</code>, <code>numbers</code>, <code>other</code>. Правила по тексту заголовка, без LLM.</li>
+        <li>Файлы <code>10-energy</code> общие, но разделы привязываются: <code>12-power-thresholds › Пороги оптового рынка</code> → ОРЭМ, <code>15-microgeneration</code> → СЭС, <code>13-metering</code> → платформа.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Схема чанка</h3>
+<pre>Chunk(
+  id="21-orem#kому-подходит/порог-доступа",
+  file="20-products/21-orem.md",
+  path="Выход на ОРЭМ › Кому подходит › Порог доступа",
+  product="orem",          # orem|platform|photo|losses|
+                           # solar_grid|solar_hybrid|general|energy
+  kind="fits",
+  text="…", tokens=180,
+  vec=np.ndarray[1024],    # bge-m3, при старте
+)</pre>
+      <p class="note">Для BM25 русский без стеммера: обрезаем слова до 5–6 первых букв. Грубо, но для 235 чанков работает. Проверить на синтетике.</p>
+    </div>
+  </div>
+  <div class="box">
+    <h3>Запрос к базе</h3>
+<pre>cands  = [p for p, prob in scores.items() if prob ≥ 0.25][:2] or ALL_PRODUCTS
+pool   = [c for c in KB if c.product in cands + ["general", "energy"]]      # «SQL WHERE»
+ranked = rrf(bm25(pool, q), cosine(pool, embed(q)))[:20]
+top    = rerank(q, ranked)[:4]
+pinned = [c for c in KB if c.product == leader and c.kind in ("forbidden", "not_fits")]
+safety = rerank(q, rrf(bm25(KB, q), cosine(KB, embed(q)))[:10])[:2]        # на случай ошибки роутинга
+context = dedupe(top + safety + pinned)        # ~1.5–2.5k токенов</pre>
+    <p class="note">Если лучший скор реранкера ниже порога τ (подбираем на eval), политика не отвечает, а уточняет или предлагает специалиста. Это прямо требуется кейсом.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Скоринг продуктов: детерминированно и с объяснением</h2>
+  <p class="lead">Фишка: каждое изменение приоритета — сработавшее правило со ссылкой на раздел базы. Менеджер в брифе и жюри в режиме отладки видят, почему бот повёл в эту сторону.</p>
+  <div class="box">
+<pre>score[p] = prior[p | сегмент]                                  # из 20-portfolio «Навигация по типу компании»
+         + Σ  rule.w   для правил, сработавших на ТЕКУЩИХ слотах  # пересчёт с нуля каждый ход
+         + Σ  λ^(T−t) · soft[p, t]                               # упоминания, прямые вопросы, масса реранка; λ = 0.7
+excluded[p] = любое правило «не подходит»                        # балл не нужен, причина идёт в бриф
+P = softmax(score / T) по неисключённым,  T = 2</pre>
+    <p class="note">Жёсткие факты пересчитываются из слотов с нуля, поэтому правка клиента («не 1,1 МВт, а 600 кВт») сразу и корректно меняет картину. Затухают только мягкие сигналы: если клиент спросил про солнце и ушёл в другую тему, интерес гаснет за пару ходов.</p>
+  </div>
+  <div class="tbl"><table>
+    <tr><th>Правило</th><th>Условие</th><th>Продукт</th><th class="n">Вес</th><th>Источник в базе</th></tr>
+    <tr><td><code>OREM_GATE</code></td><td>макс. мощность &lt; 750 кВт</td><td>ОРЭМ</td><td class="n"><span class="x">исключить</span></td><td>21-orem › Порог доступа</td></tr>
+    <tr><td><code>OREM_POWER</code></td><td>мощность ≥ 750 кВт</td><td>ОРЭМ</td><td class="n pos">+2</td><td>21-orem › Порог доступа</td></tr>
+    <tr><td><code>OREM_VOLUME</code></td><td>потребление ≥ 1 млн кВт·ч/мес</td><td>ОРЭМ</td><td class="n pos">+1.5</td><td>21-orem › Экономическая целесообразность</td></tr>
+    <tr><td><code>OREM_BORDER</code></td><td>потребление &lt; 1 млн</td><td>ОРЭМ</td><td class="n">флаг</td><td>там же: «ориентир, а не фильтр»</td></tr>
+    <tr><td><code>OREM_ALREADY</code></td><td>уже на оптовом рынке</td><td>ОРЭМ / платформа</td><td class="n"><span class="x">исключить</span> / <span class="pos">+1</span></td><td>21-orem › Не подходит, если</td></tr>
+    <tr><td><code>OREM_SECTOR</code></td><td>энергоёмкая отрасль (в т.ч. пищевая), многосменный график</td><td>ОРЭМ</td><td class="n pos">+1</td><td>21-orem › Подходит, если</td></tr>
+    <tr><td><code>OREM_RETAIL</code></td><td>торговля, офис, ИТ без производства</td><td>ОРЭМ</td><td class="n neg">−2</td><td>21-orem › Не подходит, если</td></tr>
+    <tr><td><code>PAIN_BILLS</code></td><td>боль: растут счета</td><td>ОРЭМ</td><td class="n pos">+1</td><td>00-product-map</td></tr>
+    <tr><td><code>SOLAR_ROOF</code></td><td>указана кровля или площадка</td><td>СЭС</td><td class="n pos">+1.5</td><td>23-solar › Размещение</td></tr>
+    <tr><td><code>SOLAR_DAY</code></td><td>днём основная нагрузка; склад</td><td>СЭС</td><td class="n pos">+1.5 / +1</td><td>23-solar › Лучший профиль клиента</td></tr>
+    <tr><td><code>SOLAR_NIGHT</code></td><td>объект работает в основном ночью</td><td>СЭС</td><td class="n"><span class="x">исключить</span></td><td>23-solar › Не подходит, если</td></tr>
+    <tr><td><code>SOLAR_SLATE</code></td><td>единственная кровля — шифер старше 5–10 лет</td><td>СЭС</td><td class="n"><span class="x">исключить</span></td><td>23-solar › Не подходит, если</td></tr>
+    <tr><td><code>HYBRID_OUTAGE</code></td><td>отключения, цель — надёжность</td><td>гибридная СЭС</td><td class="n pos">+2.5</td><td>00-product-map</td></tr>
+    <tr><td><code>PLATFORM_SPLIT</code></td><td>хочет учёт по цехам, объектам, арендаторам</td><td>платформа</td><td class="n pos">+2.5</td><td>22-askue › Кому подходит</td></tr>
+    <tr><td><code>LOSSES_GATE</code></td><td>промышленный потребитель или сбыт</td><td>поиск потерь</td><td class="n"><span class="x">исключить</span></td><td>24-losses › Не подходит</td></tr>
+    <tr><td><code>LOSSES_GRID</code></td><td>сетевая компания</td><td>поиск потерь</td><td class="n pos">+3</td><td>24-losses › Кому подходит</td></tr>
+    <tr><td><code>PHOTO_ORG</code></td><td>РСО, ТСО или УК, показания приходят от абонентов</td><td>фото</td><td class="n pos">+2</td><td>25-meter-reading › Кому подходит</td></tr>
+    <tr><td><code>SOFT_ASK</code></td><td>клиент прямо спросил про продукт</td><td>любой</td><td class="n pos">+2, затухает</td><td>—</td></tr>
+  </table></div>
+  <p class="note">Веса стартовые, подобраны вручную. Калибруем на размеченных вопросах из FAQ-подзаголовков (метка = файл) и на персонах. Порог 670 кВт в базе относится к почасовому учёту и ценовой категории, а не к доступу на опт.</p>
+
+  <h3>Трасса на легенде хлебозавода</h3>
+  <div class="tbl"><table>
+    <tr><th>Ход</th><th>Новые слоты</th><th>Сработало</th><th class="n">ОРЭМ</th><th class="n">Платф.</th><th class="n">СЭС</th><th class="n">Гибрид</th><th class="n">Фото</th><th>Потери</th></tr>
+    <tr><td>1</td><td>сегмент: производство; боль: счета</td><td>prior, <code>PAIN_BILLS</code>, <code>LOSSES_GATE</code></td><td class="n">0.36</td><td class="n">0.22</td><td class="n">0.17</td><td class="n">0.17</td><td class="n">0.08</td><td><span class="x">исключён</span></td></tr>
+    <tr><td>2</td><td>мощность 1 100 кВт; 420 тыс. кВт·ч</td><td><code>OREM_POWER</code>, <code>OREM_SECTOR</code>, флаг <code>OREM_BORDER</code></td><td class="n"><b>0.72</b></td><td class="n">0.10</td><td class="n">0.08</td><td class="n">0.08</td><td class="n">0.04</td><td><span class="x">исключён</span></td></tr>
+    <tr><td>3</td><td>«а солнце?»; профлист 2 400 м²; днём склад</td><td><code>SOFT_ASK</code>, <code>SOLAR_ROOF</code>, <code>SOLAR_DAY</code></td><td class="n"><b>0.39</b></td><td class="n">0.05</td><td class="n"><b>0.50</b></td><td class="n">0.04</td><td class="n">0.02</td><td><span class="x">исключён</span></td></tr>
+  </table></div>
+  <p class="note">После хода 3 кандидатов два (ОРЭМ и СЭС, оба ≥ 0.25), поэтому анкета дальше спрашивает слоты обоих по весу.</p>
+</section>
+
+<section>
+  <h2>Петля диалога и порог заявки</h2>
+  <div class="states">
+    <span class="st">OPEN</span><span class="arr">→</span><span class="st">DISCOVERY</span><span class="arr">→</span><span class="st">QUALIFY</span><span class="arr">→</span><span class="st">READY</span><span class="arr">→</span><span class="st">CONTACT</span><span class="arr">→</span><span class="st end">SUBMITTED</span>
+    <span class="arr">·</span><span class="st side">NO_CONTACT</span><span class="arr">→ «что подготовить»</span>
+  </div>
+  <div class="qa"><b>Как бот «возвращается» к анкете после ответа?</b>Отдельной ветки возврата нет. Каждый ответ собирается из двух частей: <b>[ответ на вопрос клиента, если он был] + [один вопрос по next_slot, если состояние DISCOVERY или QUALIFY]</b>. Клиент спросил про солнце: бот отвечает по базе и в той же реплике задаёт следующий вопрос анкеты. Автомат при этом остаётся в QUALIFY. Такой формат совпадает со стилем эталонов: в 2/3 из них в конце стоит уточняющий вопрос.</div>
+  <div class="tbl"><table>
+    <tr><th>Переход</th><th>Условие (проверяет код)</th></tr>
+    <tr><td>DISCOVERY → QUALIFY</td><td>есть лидер: P ≥ 0.45 и отрыв от второго ≥ 0.15, либо два кандидата по P ≥ 0.25. До этого спрашиваем различающие слоты: сегмент, цель («платёж / учёт / потери / надёжность»).</td></tr>
+    <tr><td>QUALIFY → READY</td><td>у каждого кандидата заполнены «пропускные» слоты (ОРЭМ — мощность, СЭС — кровля или площадка, платформа — число приборов, потери — тип организации) и ≥ 75% обязательных слотов, где отказ «не знаю» считается закрытым.</td></tr>
+    <tr><td>любое → CONTACT</td><td><code>wants_contact</code>; вопрос вне базы (реранк &lt; τ) или по <code>02 › Когда требуется специалист</code>; 8 ходов в QUALIFY без прогресса.</td></tr>
+    <tr><td>READY → CONTACT</td><td>бот один раз предлагает заявку и показывает, что уже собрано. Отказ ведёт в NO_CONTACT.</td></tr>
+    <tr><td>NO_CONTACT</td><td>отвечаем дальше. Повторный призыв не раньше чем через 3 хода. Отдаём список документов из <code>03-calculation</code> и опросного листа (п. 4, 8, 10, 11, 13, 14).</td></tr>
+    <tr><td>CONTACT → SUBMITTED</td><td>есть ФИО, телефон (валидатор формата), компания и согласие на ПДн → ⑦ бриф.</td></tr>
+  </table></div>
+  <div class="box">
+    <h3>Как выбирается next_slot</h3>
+<pre>value(slot) = Σ_p∈кандидаты P(p) · weight(slot, p)      # вес из Contract Registry
+            + 1.0  если slot — «пропускной» для кандидата
+            + 0.5  если slot различает двух лидеров            # мощность различает ОРЭМ и СЭС
+            − ∞    если уже спрошен дважды или клиент отказался
+next_slot = argmax(value)  →  шаблон вопроса из реестра (LLM только переформулирует под контекст)</pre>
+  </div>
+</section>
+
+<section>
+  <h2>Когда ассистент идёт в базу</h2>
+  <p class="lead">Решает политика, а не модель. Модели не дают инструментов, поэтому «полез в базу, когда взбрело» невозможно. На ход максимум один поиск плюс выборки по id.</p>
+  <div class="tbl"><table>
+    <tr><th>Событие хода</th><th>Поиск</th><th>Что берём</th></tr>
+    <tr><td>Клиент задал вопрос (<code>intent=question</code> или смешанный)</td><td>да</td><td>фильтр по кандидатам + top-2 без фильтра + закреплённые</td></tr>
+    <tr><td>Клиент только ответил на вопрос анкеты</td><td>нет</td><td>подтверждение строится из трассы правила («1,1 МВт — выше порога 750 кВт»), чанк-источник берём по id</td></tr>
+    <tr><td>Сменился лидер</td><td>нет</td><td>карточка продукта по id: «Не подходит, если», «Чего утверждать нельзя». Кэшируется в сессии</td></tr>
+    <tr><td>Переход в READY / NO_CONTACT</td><td>нет</td><td>раздел <code>03-calculation › Для &lt;продукта&gt;</code> по id</td></tr>
+    <tr><td>Вне темы или нужен специалист</td><td>нет</td><td><code>02 › Когда требуется специалист</code> по id</td></tr>
+    <tr><td>Этап 1, одиночный вопрос</td><td>да</td><td>как первый случай, состояние собирается из истории</td></tr>
+  </table></div>
+  <p class="note">Вызовы на ход: от 1 (ответ на анкету: Extractor и шаблон) до 2 LLM + эмбеддинг + реранк (вопрос клиента). Задержки ещё не мерили, заложим замер в телеметрию с первого дня.</p>
+</section>
+</div>

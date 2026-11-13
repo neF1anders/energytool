@@ -1,0 +1,20 @@
+%% Конечный автомат Dialogue Policy. Пороги — domain/policy.py::Thresholds.
+stateDiagram-v2
+  [*] --> OPEN
+  OPEN --> DISCOVERY: первая реплика клиента
+  DISCOVERY --> QUALIFY: лидер P ≥ 0.45 и отрыв ≥ 0.15<br/>или два кандидата P ≥ 0.25
+  QUALIFY --> DISCOVERY: лидер потерян (гистерезис)
+  QUALIFY --> READY: у каждого кандидата закрыты «пропускные» поля<br/>и ≥ 75% обязательных
+  READY --> CONTACT: клиент согласен оставить контакты
+  READY --> NO_CONTACT: отказ
+  NO_CONTACT --> CONTACT: согласие (повторный призыв не раньше чем через 3 хода)
+  DISCOVERY --> CONTACT: wants_contact / вне базы / нужен специалист
+  QUALIFY --> CONTACT: wants_contact / вне базы / 8 ходов без прогресса
+  CONTACT --> SUBMITTED: ФИО + телефон + компания + согласие ПДн
+  CONTACT --> NO_CONTACT: передумал
+  SUBMITTED --> [*]
+
+  note right of QUALIFY
+    Каждая реплика = [ответ на вопрос клиента?] + [1 вопрос по next_slot]
+    Отдельного «возврата к анкете» нет
+  end note

@@ -1,0 +1,19 @@
+# материалы хакатона, данные и секреты в образ не попадают
+materials/
+data/
+eval/
+dist/
+var/
+.cache/
+.env
+.env.*
+!.env.example
+.git/
+.venv/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+tools/
+docs/

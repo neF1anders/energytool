@@ -1,0 +1,37 @@
+# материалы хакатона и данные — только локально
+materials/
+data/
+*.zip
+submission.csv
+indexes/
+*.sqlite
+*.db
+
+# секреты
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ide
+.idea/
+.vscode/
+
+# локальные артефакты разработки и eval (производные материалов)
+eval/data/
+.cache/
+dist/
+var/

@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from energytool!")
+"""Energytool: ИИ-консультант-квалификатор. Слои — docs/spec.md §4."""

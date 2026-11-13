@@ -1,0 +1,45 @@
+%% Один ход диалога в веб-чате. В solution.py нет Session Store и Brief.
+sequenceDiagram
+  autonumber
+  actor C as Клиент
+  participant API as Chat API
+  participant TC as Turn Controller
+  participant SS as Session Store
+  participant EX as Extractor (LLM #1)
+  participant RD as State Reducer
+  participant SC as Product Scorer
+  participant PO as Dialogue Policy
+  participant KR as Knowledge Request
+  participant RK as Retrieve Knowledge
+  participant RS as Responder (LLM #2 / шаблон)
+  participant BR as Brief Renderer
+
+  C->>API: сообщение
+  API->>TC: handle_turn(session_id, text)
+  TC->>SS: load(session_id)
+  SS-->>TC: ConversationState
+  TC->>EX: history + state + каталог полей
+  EX-->>TC: Extraction (intent, поля с цитатой, mentions, search_query)
+  TC->>RD: apply(state, extraction)
+  RD-->>TC: state' (без неподтверждённых полей, единицы приведены)
+  TC->>SC: score(state', rules)
+  SC-->>TC: ScoreBoard (P по 6 продуктам, исключения, трасса)
+  TC->>PO: decide(state', extraction, board)
+  PO-->>TC: PolicyDecision (переход, need_facts, next_slot, offer_contact)
+  TC->>KR: build_query(extraction, state', board, decision)
+  KR-->>TC: KnowledgeQuery (кортеж сниппетов)
+  TC->>RK: RetrieveKnowledge(query)
+  alt need_facts
+    RK-->>TC: KnowledgeResult (ranked + pinned + fallback, below_floor)
+  else только ответ на анкету
+    RK-->>TC: KnowledgeResult (только by_id: карточка лидера / 03 / 02, без моделей)
+  end
+  TC->>RS: ReplyPlan (вопрос?, evidence, ask, offer_contact)
+  RS-->>TC: Reply
+  opt dialog_to == SUBMITTED
+    TC->>BR: build(state', board, contact)
+    BR-->>TC: Lead (текст + JSON) → LeadSink
+  end
+  TC->>SS: save(state', trace)
+  TC-->>API: Reply
+  API-->>C: ответ (SSE)
