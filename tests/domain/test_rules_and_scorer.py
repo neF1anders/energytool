@@ -124,3 +124,13 @@ def test_flags_do_not_change_score() -> None:
 
 def test_all_excluded_products_have_exclude_weight() -> None:
     assert all(r.weight == EXCLUDE or r.weight > -10 for r in RULES)
+
+
+def test_low_daytime_share_remains_a_hard_grid_solar_qualification_exclusion() -> None:
+    state = state_from({"daytime_share": "low"})
+    state.soft_signals.append(SoftSignal(P.SOLAR_GRID, 1.0, turn=state.turn, source="mention"))
+
+    board = score(state, RULES, PRIORS, ScoringParams())
+
+    assert board.probability(P.SOLAR_GRID) == 0.0
+    assert P.SOLAR_GRID in {item.product for item in board.excluded()}
