@@ -67,6 +67,7 @@ docker compose up --build       # http://localhost:8000
 ```bash
 uv run python tools/build_submission.py                              # dist/submission.zip
 uv run python tools/build_submission.py --env BATCH_PIPELINE=full    # вариант с полным конвейером
+uv run python tools/build_submission.py --env BATCH_CONDENSE=true    # вариант с вопросом для поиска из диалога
 ```
 
 ZIP плоский (модули `energytool__a__b.py` + `solution.py` + `requirements.txt` из разрешённого списка) и без данных. Проверка «как на платформе»:
@@ -90,6 +91,9 @@ cd /tmp/run && uv run --no-project --with-requirements requirements.txt python s
 | `DATA_DIR` | каталог с `knowledge-base.zip` (и `questions.csv` для этапа 1) |
 | `SQLITE_PATH`, `CRM_WEBHOOK_URL` | хранилище сессий и заявок, вебхук CRM |
 | `RETRIEVAL_CONFIG` | конфигурация поиска (по умолчанию `hybrid_rerank`) |
+| `ANSWER_TOP_K`, `ANSWER_KEEP_RATIO`, `ANSWER_KEEP_FLOOR`, `ANSWER_MIN_SCORE` | этап 1: сколько разделов идёт в ответ и как отсекаются слабые по скору реранкера |
+| `BATCH_GUARDRAILS`, `BATCH_CONDENSE` | этап 1: разделы-ограничения базы в промпте (вкл.), вопрос для поиска из диалога (выкл.) |
+| `LLM_CACHE_DIR` | только разработка: дисковый кэш ответов моделей для повторных прогонов eval |
 | `LOG_LEVEL`, `LOG_FORMAT` | логи в stderr, `json` или `text`; телефоны, e-mail и ключи маскируются |
 
 Внешние сервисы: только OpenAI-совместимый API (OpenRouter локально, прокси организаторов на платформе). Ключ передаётся через `LLM_API_KEY`, в коде и логах ключей нет.
