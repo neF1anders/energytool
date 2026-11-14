@@ -83,6 +83,17 @@ def test_by_id_and_pins_come_first_and_without_search() -> None:
     assert reranker.calls == []
 
 
+def test_ranked_evidence_precedes_pinned_guardrails() -> None:
+    query = (
+        TextSnippet("учёт по цехам платформа"),
+        PinSnippet(Product.OREM, frozenset({SectionKind.FORBIDDEN})),
+        BudgetSnippet(top_k=1, max_tokens=10_000),
+    )
+    result = retrieve()(query)
+    assert [e.origin for e in result.evidence] == ["ranked", "pinned"]
+    assert result.evidence[0].chunk.id == "askue#цеха"
+
+
 def test_dense_failure_degrades_to_lexical() -> None:
     result = retrieve(embedder=FakeEmbedder(fail=True))((TextSnippet("ценовая категория"),))
     assert ids(result)[0] == "energy#категории"

@@ -219,7 +219,10 @@ def make_fallback(*, lexical: bool = True, dense: bool = True) -> Stage:
     return fallback
 
 
-_ORIGIN_ORDER: dict[Origin, int] = {"by_id": 0, "pinned": 1, "ranked": 2, "fallback": 3}
+# Ranked evidence answers the client's concrete question and must get the prompt/token
+# budget first. Pinned sections are guardrails (usually product limitations), not the
+# primary answer. Putting them first could crowd a directly relevant FAQ out in FULL mode.
+_ORIGIN_ORDER: dict[Origin, int] = {"by_id": 0, "ranked": 1, "pinned": 2, "fallback": 3}
 
 
 def pack(c: Candidates, ctx: Ctx) -> Candidates:
