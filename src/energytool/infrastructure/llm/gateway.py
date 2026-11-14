@@ -13,12 +13,15 @@ reranker) строятся поверх него.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 import httpx
@@ -243,11 +246,20 @@ class LlmGateway:
             raise LlmRequestError(f"{kind}: не заданы адрес или ключ эндпоинта")
         url = endpoint.base_url + path
         headers = {"Authorization": f"Bearer {endpoint.api_key}"}
+        cache_file = _cache_file(self._settings.llm_cache_dir, kind, payload)
+        if cache_file is not None and cache_file.is_file():
+            cached: dict[str, Any] = json.loads(cache_file.read_text(encoding="utf-8"))
+            return _Response(cached, 0.0, 0)
         started = time.perf_counter()
         attempt = 0
         while True:
             outcome = self._attempt(url, headers, payload, timeout_sec, attempt)
             if outcome.body is not None:
+                if cache_file is not None:
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(
+                        json.dumps(outcome.body, ensure_ascii=False), encoding="utf-8"
+                    )
                 response = _Response(outcome.body, _ms_since(started), attempt)
                 self._report(kind, endpoint.model, response)
                 return response
@@ -324,6 +336,15 @@ class LlmGateway:
         )
         record_llm_call(call)
         logger.error("llm call failed", extra={"data": call})
+
+
+def _cache_file(cache_dir: Path | None, kind: str, payload: dict[str, Any]) -> Path | None:
+    """Файл кэша ответа модели (LLM_CACHE_DIR, только разработка): повторный прогон eval
+    с теми же запросами не тратит бюджет ключа. На платформе переменная не задана."""
+    if cache_dir is None:
+        return None
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return cache_dir / kind / f"{hashlib.sha256(raw.encode('utf-8')).hexdigest()}.json"
 
 
 _OPENROUTER_THINKING_OFF: dict[str, Any] = {"reasoning": {"enabled": False}}

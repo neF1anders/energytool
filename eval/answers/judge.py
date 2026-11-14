@@ -36,6 +36,19 @@ JUDGE_SYSTEM = """\
 Верни только JSON: {"reason": "<1-2 предложения>", \
 "verdict": "<A_much_better|A_better|tie|B_better|B_much_better>"}"""
 
+# Второй промпт — нейтральная формулировка «какой ответ ближе к эталону»: настоящий промпт
+# платформы неизвестен, поэтому вариант считается лучше, только если выигрывает у обоих.
+JUDGE_SYSTEM_CLOSENESS = """\
+Ты оцениваешь качество ответов ассистента. Даны вопрос клиента, эталонный ответ и два \
+ответа: A и B. Определи, какой из ответов лучше соответствует эталонному по смыслу: \
+те же выводы и ключевые факты, нет противоречий эталону и лишних непроверяемых \
+утверждений, такой же следующий шаг для клиента (уточняющий вопрос, оговорка или отказ).
+
+Верни только JSON: {"reason": "<1-2 предложения>", \
+"verdict": "<A_much_better|A_better|tie|B_better|B_much_better>"}"""
+
+JUDGE_PROMPTS = {"v1": JUDGE_SYSTEM, "v2": JUDGE_SYSTEM_CLOSENESS}
+
 JUDGE_USER = """\
 Вопрос клиента (может включать историю диалога):
 {question}
@@ -75,10 +88,18 @@ class QuestionScore:
 
 
 def judge_pair(
-    gateway: LlmGateway, question: str, golden: str, team: str, baseline: str
+    gateway: LlmGateway,
+    question: str,
+    golden: str,
+    team: str,
+    baseline: str,
+    system: str = JUDGE_SYSTEM,
 ) -> tuple[Judgement | None, Judgement | None]:
-    first = _round(gateway, question, golden, a=baseline, b=team, team_is_b=True)
-    second = _round(gateway, question, golden, a=team, b=baseline, team_is_b=False)
+    if team.strip() == baseline.strip():
+        same = Judgement(score=0.5, reason="ответы совпадают", raw="tie")
+        return same, same
+    first = _round(gateway, system, question, golden, a=baseline, b=team, team_is_b=True)
+    second = _round(gateway, system, question, golden, a=team, b=baseline, team_is_b=False)
     return first, second
 
 
@@ -89,13 +110,20 @@ def combine(qid: str, rounds: tuple[Judgement | None, Judgement | None]) -> Ques
 
 
 def _round(
-    gateway: LlmGateway, question: str, golden: str, *, a: str, b: str, team_is_b: bool
+    gateway: LlmGateway,
+    system: str,
+    question: str,
+    golden: str,
+    *,
+    a: str,
+    b: str,
+    team_is_b: bool,
 ) -> Judgement | None:
     prompt = JUDGE_USER.format(question=question, golden=golden, a=a, b=b)
     for _ in range(2):
         try:
             result = gateway.chat(
-                [{"role": "system", "content": JUDGE_SYSTEM}, {"role": "user", "content": prompt}],
+                [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=300,
             )

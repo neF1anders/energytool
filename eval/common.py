@@ -39,6 +39,11 @@ def load_demo() -> list[DemoItem]:
     return [DemoItem(qid, text, golden.get(qid, "")) for qid, text in questions.items()]
 
 
+def load_extra(path: Path) -> list[DemoItem]:
+    """Дополнительный локальный набор: [{"id", "question", "golden"}, ...]."""
+    return [DemoItem(str(i["id"]), i["question"], i["golden"]) for i in load_json(path, [])]
+
+
 def load_json(path: Path, default: Any) -> Any:
     if not path.exists():
         return default

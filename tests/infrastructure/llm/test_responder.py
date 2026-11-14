@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import httpx
 
@@ -98,7 +99,21 @@ def test_messages_include_examples_history_and_evidence() -> None:
     assert "[1] orem#порог" in last
     assert "Клиент: Мы завод\nКонсультант: Какая мощность?" in last
     assert "Вопрос клиента: Нам подходит опт?" in last
-    assert "только если без него нельзя ответить" in last
+    assert "Границы и ограничения" not in last
+
+
+def test_messages_put_pinned_sections_into_limits_and_hints_blocks() -> None:
+    base = plan()
+    limit = replace(base.evidence[0], origin="pinned")
+    hint = replace(base.evidence[0], origin="hint")
+    with_guards = replace(base, evidence=(*base.evidence, limit, hint), weak_evidence=True)
+    last = build_messages(with_guards, [])[-1]["content"]
+    facts, rest = last.split("Границы и ограничения:")
+    limits, hints = rest.split("Что можно уточнить у клиента:")
+    assert "[1] orem#порог" in facts and "[2]" not in facts
+    assert "orem#порог" in limits
+    assert "orem#порог" in hints
+    assert "Поиск не нашёл" in hints
 
 
 def test_writer_uses_llm_and_cleans() -> None:

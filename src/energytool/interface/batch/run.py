@@ -80,7 +80,14 @@ def answer_all(
     index = container.build_index()
     settings = container.settings
     retrieve = container.retriever(index)
-    budget = BudgetSnippet(top_k=settings.top_k, fallback_k=1)
+    budget = BudgetSnippet(
+        top_k=settings.answer_top_k,
+        fallback_k=1,
+        max_tokens=settings.answer_context_tokens,
+        min_rerank_score=settings.answer_min_score,
+        keep_ratio=settings.answer_keep_ratio,
+        keep_floor=settings.answer_keep_floor,
+    )
     full = settings.batch_pipeline == "full"
     use_case = AnswerQuestion(
         retrieve=retrieve,
@@ -90,6 +97,7 @@ def answer_all(
         extractor=container.extractor() if full else None,
         qualifier=container.qualifier(retrieve, budget) if full else None,
         ask_in_batch=settings.batch_ask,
+        with_guardrails=settings.batch_guardrails,
     )
     answers: dict[str, str] = {}
     durations: list[float] = []

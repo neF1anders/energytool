@@ -24,6 +24,7 @@ class ReplyPlan:
     acknowledge: tuple[
         str, ...
     ] = ()  # подтверждения из трассы правил: «1,1 МВт — выше порога 750 кВт»
+    weak_evidence: bool = False  # поиск не нашёл близких разделов: отказ или специалист
     template_only: bool = False  # вопроса клиента нет → шаблон без LLM
     max_words: int = 70  # эталоны ~38 слов; лимит кейса 150
 

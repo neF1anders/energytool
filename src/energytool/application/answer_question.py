@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from energytool.application.guardrails import guard_query, is_ask_hint
 from energytool.application.knowledge_request import query_from_history
 from energytool.application.ports import (
     ExternalServiceError,
@@ -28,7 +29,12 @@ from energytool.application.qualification import Qualifier, Retriever
 from energytool.application.trace import EvidenceRef, TurnTrace, collecting_llm_calls
 from energytool.application.transcript import last_user_message, parse_transcript
 from energytool.domain.contract import ContractRegistry
-from energytool.domain.knowledge import BudgetSnippet, KnowledgeQuery, KnowledgeResult
+from energytool.domain.knowledge import (
+    BudgetSnippet,
+    Evidence,
+    KnowledgeQuery,
+    KnowledgeResult,
+)
 from energytool.domain.reply import Reply, ReplyPlan
 from energytool.domain.state import ConversationState, Message, Role
 
@@ -51,6 +57,7 @@ class AnswerQuestion:
     qualifier: Qualifier | None = None
     registry: ContractRegistry = ContractRegistry()
     ask_in_batch: bool = True  # добавлять вопрос анкеты в ответ (проверяется на eval)
+    with_guardrails: bool = True  # подкладывать разделы-ограничения базы (guardrails.py)
 
     def __call__(self, case_id: str, cell: str, mode: AnswerMode = AnswerMode.FULL) -> Reply:
         started = time.perf_counter()
@@ -76,9 +83,10 @@ class AnswerQuestion:
         result = self._naive_retrieve(query_from_history(history, self.budget), trace)
         plan = ReplyPlan(
             answer_question=question,
-            evidence=result.evidence,
+            evidence=(*result.evidence, *self._guard_evidence(result, trace)),
             ask=None,
             offer_contact=False,
+            weak_evidence=result.below_floor,
             template_only=mode is AnswerMode.NO_LLM,
         )
         return self._write(plan, history, trace)
@@ -107,6 +115,24 @@ class AnswerQuestion:
         reply = self.writer.write(plan, history)
         trace.timings_ms["respond"] = _ms(started)
         return reply
+
+    def _guard_evidence(self, found: KnowledgeResult, trace: TurnTrace) -> tuple[Evidence, ...]:
+        """Разделы-ограничения, которых ещё нет среди найденных. Модели не вызываются."""
+        if not self.with_guardrails:
+            return ()
+        try:
+            guards = self.retrieve(guard_query(found.scope_mass)).evidence
+        except ExternalServiceError as exc:
+            logger.error("guardrails lookup failed: %s", exc)
+            return ()
+        known = {e.chunk.id for e in found.evidence}
+        fresh = tuple(
+            replace(e, origin="hint" if is_ask_hint(e.chunk.id) else "pinned")
+            for e in guards
+            if e.chunk.id not in known
+        )
+        trace.evidence.extend(EvidenceRef(e.chunk.id, e.origin, 1.0) for e in fresh)
+        return fresh
 
     def _naive_retrieve(self, query: KnowledgeQuery, trace: TurnTrace) -> KnowledgeResult:
         started = time.perf_counter()

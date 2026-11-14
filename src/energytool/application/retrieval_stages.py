@@ -184,6 +184,8 @@ def rerank(c: Candidates, ctx: Ctx) -> Candidates:
     budget = ctx.parsed.budget
     chunks = _chunks_by_id(ctx, [chunk_id for chunk_id, _ in c.fused])
     ranked = _rerank_or_fused(c, ctx, chunks, c.fused, budget.top_k)
+    if ctx.reranker is not None and "rerank_failed" not in c.notes:
+        ranked = _drop_weak(ranked, budget)
     c.evidence.extend(_evidence(chunks, ranked, "ranked", c.fused))
     if budget.min_rerank_score is not None and ctx.reranker is not None and ranked:
         c.below_floor = "rerank_failed" not in c.notes and ranked[0][1] < budget.min_rerank_score
@@ -219,7 +221,13 @@ def make_fallback(*, lexical: bool = True, dense: bool = True) -> Stage:
     return fallback
 
 
-_ORIGIN_ORDER: dict[Origin, int] = {"by_id": 0, "pinned": 1, "ranked": 2, "fallback": 3}
+_ORIGIN_ORDER: dict[Origin, int] = {
+    "by_id": 0,
+    "pinned": 1,
+    "hint": 1,
+    "ranked": 2,
+    "fallback": 3,
+}
 
 
 def pack(c: Candidates, ctx: Ctx) -> Candidates:
@@ -366,6 +374,15 @@ def _rerank_or_fused(
     if ctx.parsed.boosts:
         ranked = _boosted(ranked, ctx)
     return ranked[:top_n]
+
+
+def _drop_weak(ranked: Ranking, budget: BudgetSnippet) -> Ranking:
+    """Слабые разделы приносят в ответ посторонние цифры: оставляем только близкие к
+    лучшему по скору реранкера. Скоры RRF для этого не годятся — вызывать после реранка."""
+    if not ranked:
+        return ranked
+    floor = max(budget.keep_floor, budget.keep_ratio * ranked[0][1])
+    return [ranked[0], *(pair for pair in ranked[1:] if pair[1] >= floor)]
 
 
 def _evidence(
