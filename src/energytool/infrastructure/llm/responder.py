@@ -42,6 +42,8 @@ HARD_WORD_LIMIT = 150  # лимит кейса
 EVIDENCE_CHARS = 2400  # на один фрагмент в промпте
 HISTORY_TURNS = 6
 REPLY_MAX_TOKENS = 450
+# своя температура: TEMPERATURE платформы подобрана под учебный пример и может быть выше
+REPLY_TEMPERATURE = 0.1
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 _MARKDOWN = re.compile(r"(\*\*|__|`|^#+\s*|^\s*[-*•]\s+|^\s*\d+[.)]\s+)", re.MULTILINE)
@@ -63,10 +65,10 @@ class LlmReplyWriter:
                 used_llm=False,
                 evidence_ids=evidence_ids,
             )
+        messages = build_messages(plan, history)
         try:
             result = self._gateway.chat(
-                build_messages(plan, history),
-                max_tokens=self._max_tokens,
+                messages, temperature=REPLY_TEMPERATURE, max_tokens=self._max_tokens
             )
         except LlmGatewayError as exc:
             logger.error("responder degraded to template: %s", exc)
