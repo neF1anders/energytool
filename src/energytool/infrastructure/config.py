@@ -77,6 +77,9 @@ class Settings:
     answer_keep_floor: float = 0.25
     answer_min_score: float = 0.15  # лучший скор ниже — в базе нет ответа (отказ или специалист)
     answer_context_tokens: int = 5000  # бюджет найденных разделов в промпте этапа 1
+    batch_condense: bool = (
+        False  # вопрос для поиска из истории диалога (один вызов LLM); на eval без прироста
+    )
     batch_guardrails: bool = True  # разделы-ограничения базы в ответе этапа 1
     reranker_top_n: int = 4
     timeouts: Timeouts = field(default_factory=Timeouts)
@@ -124,6 +127,7 @@ class Settings:
             answer_keep_floor=reader.number("ANSWER_KEEP_FLOOR", 0.25, 0.0, 1.0),
             answer_min_score=reader.number("ANSWER_MIN_SCORE", 0.15, 0.0, 1.0),
             answer_context_tokens=reader.integer("ANSWER_CONTEXT_TOKENS", 5000, 500, 20000),
+            batch_condense=reader.flag("BATCH_CONDENSE", default=False),
             batch_guardrails=reader.flag("BATCH_GUARDRAILS", default=True),
             reranker_top_n=reader.integer("RERANKER_TOP_N", 4, 1, 30),
             max_retries=reader.integer("LLM_MAX_RETRIES", 3, 0, 5),

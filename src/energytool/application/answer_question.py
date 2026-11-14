@@ -22,6 +22,7 @@ from energytool.application.knowledge_request import query_from_history
 from energytool.application.ports import (
     ExternalServiceError,
     FactExtractor,
+    QuestionCondenser,
     ReplyWriter,
     Telemetry,
 )
@@ -34,6 +35,7 @@ from energytool.domain.knowledge import (
     Evidence,
     KnowledgeQuery,
     KnowledgeResult,
+    TextSnippet,
 )
 from energytool.domain.reply import Reply, ReplyPlan
 from energytool.domain.state import ConversationState, Message, Role
@@ -57,6 +59,7 @@ class AnswerQuestion:
     qualifier: Qualifier | None = None
     registry: ContractRegistry = ContractRegistry()
     ask_in_batch: bool = True  # добавлять вопрос анкеты в ответ (проверяется на eval)
+    condenser: QuestionCondenser | None = None  # вопрос для поиска из истории диалога
     with_guardrails: bool = True  # подкладывать разделы-ограничения базы (guardrails.py)
 
     def __call__(self, case_id: str, cell: str, mode: AnswerMode = AnswerMode.FULL) -> Reply:
@@ -80,7 +83,7 @@ class AnswerQuestion:
             plan = self._full_plan(history, question, trace)
             if plan is not None:
                 return self._write(plan, history, trace)
-        result = self._naive_retrieve(query_from_history(history, self.budget), trace)
+        result = self._naive_retrieve(self._naive_query(history, mode), trace)
         plan = ReplyPlan(
             answer_question=question,
             evidence=(*result.evidence, *self._guard_evidence(result, trace)),
@@ -115,6 +118,20 @@ class AnswerQuestion:
         reply = self.writer.write(plan, history)
         trace.timings_ms["respond"] = _ms(started)
         return reply
+
+    def _naive_query(self, history: list[Message], mode: AnswerMode) -> KnowledgeQuery:
+        """Одиночный вопрос ищется как есть; для диалога основной текст — вопрос,
+        собранный из истории, последняя реплика остаётся вторым текстом."""
+        users = [m.text for m in history if m.role is Role.USER]
+        condense = self.condenser is not None and len(users) > 1 and mode is not AnswerMode.NO_LLM
+        standalone = self.condenser.condense(history) if self.condenser and condense else ""
+        if not standalone:
+            return query_from_history(history, self.budget)
+        return (
+            TextSnippet(standalone, weight=1.0),
+            TextSnippet(users[-1], weight=0.5),
+            self.budget,
+        )
 
     def _guard_evidence(self, found: KnowledgeResult, trace: TurnTrace) -> tuple[Evidence, ...]:
         """Разделы-ограничения, которых ещё нет среди найденных. Модели не вызываются."""

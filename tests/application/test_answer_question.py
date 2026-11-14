@@ -59,3 +59,25 @@ def test_retrieval_failure_still_answers_and_no_llm_mode_is_template() -> None:
     assert writer.plans[0].evidence == ()
     assert writer.plans[0].template_only is True
     assert traces.items[0].degraded == ["retrieval_failed", "template_reply"]
+
+
+class FixedCondenser:
+    def condense(self, history: Sequence[Message]) -> str:
+        return "Завод 1 МВт: подходит ли оптовый рынок?"
+
+
+def test_dialog_search_uses_condensed_question_and_single_question_does_not() -> None:
+    queries: list[KnowledgeQuery] = []
+
+    def retrieve(query: KnowledgeQuery) -> KnowledgeResult:
+        queries.append(query)
+        return KnowledgeResult(evidence=())
+
+    use_case = AnswerQuestion(
+        retrieve, RecordingWriter(), Traces(), condenser=FixedCondenser(), with_guardrails=False
+    )
+    use_case("1", "Пользователь: Мы завод\nАссистент: Мощность?\nПользователь: 1 МВт. Опт?")
+    use_case("2", "Подходит ли нам опт?")
+    dialog, single = ([s.text for s in q if isinstance(s, TextSnippet)] for q in queries)
+    assert dialog == ["Завод 1 МВт: подходит ли оптовый рынок?", "1 МВт. Опт?"]
+    assert single == ["Подходит ли нам опт?"]

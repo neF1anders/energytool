@@ -40,6 +40,12 @@ class FactExtractor(Protocol):
     ) -> Extraction: ...
 
 
+class QuestionCondenser(Protocol):
+    """История диалога → самостоятельный вопрос для поиска; пустая строка — не удалось."""
+
+    def condense(self, history: Sequence[Message]) -> str: ...
+
+
 class ReplyWriter(Protocol):
     """LLM #2 (или шаблон): план ответа → текст."""
 
