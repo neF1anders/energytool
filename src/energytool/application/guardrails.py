@@ -20,6 +20,7 @@ from energytool.domain.knowledge import (
     BudgetSnippet,
     IdSnippet,
     KnowledgeQuery,
+    Origin,
     PinSnippet,
     Scope,
     SectionKind,
@@ -52,8 +53,10 @@ MAX_GUARD_PRODUCTS = 2
 GUARD_BUDGET = BudgetSnippet(top_k=0, recall_k=0, fallback_k=0, max_tokens=6000)
 
 
-def is_ask_hint(chunk_id: str) -> bool:
-    return chunk_id.startswith(f"{REQUESTS_FILE}#какие-сведения-могут-понадобиться")
+def guard_origin(chunk_id: str) -> Origin:
+    """Куда раздел попадёт в промпте: подсказка для уточняющего вопроса или ограничение."""
+    is_hint = chunk_id.startswith(f"{REQUESTS_FILE}#какие-сведения-могут-понадобиться")
+    return "hint" if is_hint else "pinned"
 
 
 def guard_query(scope_mass: Mapping[Scope, float]) -> KnowledgeQuery:

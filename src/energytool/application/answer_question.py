@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
-from energytool.application.guardrails import guard_query, is_ask_hint
+from energytool.application.guardrails import guard_origin, guard_query
 from energytool.application.knowledge_request import query_from_history
 from energytool.application.ports import (
     ExternalServiceError,
@@ -144,9 +144,7 @@ class AnswerQuestion:
             return ()
         known = {e.chunk.id for e in found.evidence}
         fresh = tuple(
-            replace(e, origin="hint" if is_ask_hint(e.chunk.id) else "pinned")
-            for e in guards
-            if e.chunk.id not in known
+            replace(e, origin=guard_origin(e.chunk.id)) for e in guards if e.chunk.id not in known
         )
         trace.evidence.extend(EvidenceRef(e.chunk.id, e.origin, 1.0) for e in fresh)
         return fresh
