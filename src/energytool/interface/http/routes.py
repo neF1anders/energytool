@@ -8,39 +8,49 @@ GET  /api/sessions/{id}/messages         → история
 GET  /api/sessions/{id}/debug            → TurnTrace[] сессии
 POST /api/sessions/{id}/lead {contact}    → {lead_id} (форма заявки в виджете)
 GET  /api/leads, /leads                  → заявки с брифами (JSON и страница менеджера)
+GET  /api/leads/{id}, /api/leads/{id}.txt → одна заявка (JSON) и её бриф файлом
+GET  /api/admin/traces?limit&since       → лента мониторинга: трассы всех сессий + сводка
 GET  /healthz
-GET  /, /widget.js                       → демо-страница и виджет
+GET  /, /static/{app.js,styles.css}      → консоль: чат, заявки, мониторинг
+GET  /widget-demo, /widget.js            → демо-страница встраиваемого виджета и сам виджет
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import statistics
 from collections.abc import Iterator
+from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse
 
 from energytool.application.submit_lead import LeadValidationError, SessionNotFoundError
 from energytool.bootstrap_web import WebServices
 from energytool.domain.lead import Contact
 from energytool.infrastructure.logs import log_context
-from energytool.interface.http.debug_view import debug_info
+from energytool.infrastructure.storage.lead_files import lead_file_name, render_lead_file
+from energytool.interface.http.debug_view import debug_info, with_document_titles
 from energytool.interface.http.schemas import (
     ContactIn,
     Health,
     LeadCreated,
     MessageIn,
     SessionCreated,
+    TraceFeed,
+    TraceStats,
     TurnOut,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 STATIC = Path(__file__).resolve().parents[1] / "web" / "static"
+CONSOLE = STATIC / "console"
+CONSOLE_ASSETS = {"app.js": "application/javascript", "styles.css": "text/css"}
 STREAM_CHUNK_WORDS = 3
 
 
@@ -50,8 +60,15 @@ def services(request: Request) -> WebServices:
 
 @router.get("/healthz", response_model=Health)
 def healthz(request: Request) -> Health:
-    index = services(request).index
-    return Health(status="ok", chunks=len(index.chunks.all()), dense_ready=index.dense_ready)
+    web = services(request)
+    settings = web.container.settings
+    return Health(
+        status="ok",
+        chunks=len(web.index.chunks.all()),
+        dense_ready=web.index.dense_ready,
+        model=settings.llm.model,
+        retrieval=settings.retrieval_config,
+    )
 
 
 @router.post("/api/sessions", response_model=SessionCreated)
@@ -100,8 +117,36 @@ def get_debug(session_id: str, request: Request) -> list[dict[str, Any]]:
     return repo.traces(session_id)
 
 
+@router.get("/api/admin/traces", response_model=TraceFeed)
+def trace_feed(
+    request: Request, limit: int = Query(50, ge=1, le=500), since: datetime | None = None
+) -> TraceFeed:
+    web = services(request)
+    items = [with_document_titles(t, web.index) for t in web.sessions.recent_traces(limit, since)]
+    totals = [float(t["timings_ms"].get("total", 0.0)) for t in items if t.get("timings_ms")]
+    stats = TraceStats(
+        requests=len(items),
+        avg_ms=round(statistics.fmean(totals), 1) if totals else None,
+        last_ms=totals[0] if totals else None,
+        llm_calls=sum(len(t.get("llm_calls", [])) for t in items),
+    )
+    return TraceFeed(stats=stats, items=items)
+
+
 @router.get("/", include_in_schema=False)
-def demo_page() -> FileResponse:
+def console_page() -> FileResponse:
+    return FileResponse(CONSOLE / "index.html", media_type="text/html")
+
+
+@router.get("/static/{name}", include_in_schema=False)
+def console_asset(name: str) -> FileResponse:
+    if name not in CONSOLE_ASSETS:
+        raise HTTPException(status_code=404, detail=f"{name} not found")
+    return FileResponse(CONSOLE / name, media_type=CONSOLE_ASSETS[name])
+
+
+@router.get("/widget-demo", include_in_schema=False)
+def widget_demo_page() -> FileResponse:
     return FileResponse(STATIC / "index.html", media_type="text/html")
 
 
@@ -155,6 +200,28 @@ def post_lead(session_id: str, body: ContactIn, request: Request) -> LeadCreated
 @router.get("/api/leads")
 def get_leads(request: Request, limit: int = 100) -> list[dict[str, Any]]:
     return services(request).leads.list(limit)
+
+
+@router.get("/api/leads/{lead_id}.txt", response_class=PlainTextResponse)
+def get_lead_file(lead_id: str, request: Request) -> PlainTextResponse:
+    row = _require_lead(request, lead_id)
+    text = render_lead_file(
+        row["id"], row["session_id"], datetime.fromisoformat(row["created_at"]), row["brief_text"]
+    )
+    disposition = f'attachment; filename="{lead_file_name(row["id"])}"'
+    return PlainTextResponse(text, headers={"Content-Disposition": disposition})
+
+
+@router.get("/api/leads/{lead_id}")
+def get_lead(lead_id: str, request: Request) -> dict[str, Any]:
+    return _require_lead(request, lead_id)
+
+
+def _require_lead(request: Request, lead_id: str) -> dict[str, Any]:
+    row = services(request).leads.get(lead_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"lead {lead_id} not found")
+    return row
 
 
 @router.get("/leads", include_in_schema=False, response_class=HTMLResponse)

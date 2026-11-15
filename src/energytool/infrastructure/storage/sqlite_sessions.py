@@ -133,6 +133,18 @@ class SqliteSessionRepo:
             ).all()
         return [json.loads(r.trace_json) for r in rows]
 
+    def recent_traces(self, limit: int, since: datetime | None = None) -> list[dict[str, Any]]:
+        """Последние трассы всех сессий, новые сверху — для панели мониторинга."""
+        query = select(db.traces).order_by(db.traces.c.id.desc()).limit(limit)
+        if since is not None:
+            query = query.where(db.traces.c.created_at > as_utc(since).astimezone(UTC))
+        with self._engine.connect() as conn:
+            rows = conn.execute(query).all()
+        return [
+            {**json.loads(r.trace_json), "created_at": as_utc(r.created_at).isoformat()}
+            for r in rows
+        ]
+
     def messages(self, session_id: str) -> list[dict[str, Any]]:
         with self._engine.connect() as conn:
             rows = conn.execute(
@@ -141,3 +153,8 @@ class SqliteSessionRepo:
                 .order_by(db.messages.c.id)
             ).all()
         return [{"turn": r.turn, "role": r.role, "text": r.text} for r in rows]
+
+
+def as_utc(moment: datetime) -> datetime:
+    # SQLite возвращает DateTime без tzinfo даже при timezone=True; пишем мы всегда UTC
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)

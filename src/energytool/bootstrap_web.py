@@ -19,6 +19,7 @@ from energytool.domain.rules import PRIORS, RULES
 from energytool.domain.scoring import ScoringParams
 from energytool.infrastructure.brief_render import TextBriefRenderer
 from energytool.infrastructure.storage.database import create_database
+from energytool.infrastructure.storage.lead_files import CompositeLeadSink, TextFileLeadSink
 from energytool.infrastructure.storage.leads import SqliteLeadSink
 from energytool.infrastructure.storage.sqlite_sessions import SqliteSessionRepo, utc_now
 
@@ -48,7 +49,7 @@ def build_web(container: Container, index: KnowledgeIndex | None = None) -> WebS
         priors=PRIORS,
         params=ScoringParams(),
         renderer=TextBriefRenderer(registry),
-        sink=leads,
+        sink=CompositeLeadSink(leads, [TextFileLeadSink(settings.leads_dir)]),
         sessions=sessions,
         telemetry=container.telemetry,
         now=utc_now,
@@ -67,7 +68,11 @@ def build_web(container: Container, index: KnowledgeIndex | None = None) -> WebS
     logger.info(
         "web services ready",
         extra={
-            "data": {"sqlite": str(settings.sqlite_path), "crm": bool(settings.crm_webhook_url)}
+            "data": {
+                "sqlite": str(settings.sqlite_path),
+                "crm": bool(settings.crm_webhook_url),
+                "leads_dir": str(settings.leads_dir),
+            }
         },
     )
     return WebServices(container, index, sessions, handle_turn, submit_lead, leads)

@@ -14,11 +14,11 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import Engine, insert, select, update
+from sqlalchemy import Engine, Row, insert, select, update
 
 from energytool.domain.lead import Lead
 from energytool.infrastructure.storage import database as db
-from energytool.infrastructure.storage.sqlite_sessions import StorageError, utc_now
+from energytool.infrastructure.storage.sqlite_sessions import StorageError, as_utc, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -54,17 +54,12 @@ class SqliteLeadSink:
             rows = conn.execute(
                 select(db.leads).order_by(db.leads.c.created_at.desc()).limit(limit)
             ).all()
-        return [
-            {
-                "id": r.id,
-                "session_id": r.session_id,
-                "created_at": r.created_at.isoformat(),
-                "status": r.status,
-                "brief_text": r.brief_text,
-                "brief": json.loads(r.brief_json),
-            }
-            for r in rows
-        ]
+        return [_lead_row(r) for r in rows]
+
+    def get(self, lead_id: str) -> dict[str, Any] | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(select(db.leads).where(db.leads.c.id == lead_id)).first()
+        return _lead_row(row) if row is not None else None
 
     def _store(self, lead: Lead) -> None:
         try:
@@ -95,3 +90,14 @@ class SqliteLeadSink:
             logger.error("crm webhook failed: %s", exc, extra={"data": {"lead_id": lead.id}})
             return "send_failed"
         return "sent"
+
+
+def _lead_row(row: Row[Any]) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "session_id": row.session_id,
+        "created_at": as_utc(row.created_at).isoformat(),
+        "status": row.status,
+        "brief_text": row.brief_text,
+        "brief": json.loads(row.brief_json),
+    }
