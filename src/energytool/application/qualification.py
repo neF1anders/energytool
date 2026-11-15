@@ -56,6 +56,7 @@ class Qualifier:
     thresholds: Thresholds
     retrieve: Retriever
     budget: BudgetSnippet
+    history_context: bool = False  # прошлые реплики клиента в запросе поиска
 
     def step(
         self,
@@ -104,8 +105,16 @@ class Qualifier:
     ) -> KnowledgeResult:
         if not decision.need_facts and not decision.pinned_sections:
             return KnowledgeResult(evidence=())
-        budget = replace(self.budget, min_rerank_score=self.thresholds.rerank_floor)
-        query = build_query(extraction, state, decision, budget, restrict_scope=mode == "chat")
+        floor = self.thresholds.rerank_floor
+        budget = self.budget if floor is None else replace(self.budget, min_rerank_score=floor)
+        query = build_query(
+            extraction,
+            state,
+            decision,
+            budget,
+            restrict_scope=mode == "chat",
+            history_context=self.history_context,
+        )
         started = time.perf_counter()
         try:
             result = self.retrieve(query)

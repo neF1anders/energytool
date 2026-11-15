@@ -92,8 +92,11 @@ class Settings:
     log_format: LogFormat = "json"
     run_budget_sec: int = 1080
     fast_path_after_sec: int = 900
-    batch_pipeline: str = "naive"  # naive | full: на демо равны по качеству, naive вдвое быстрее
+    # naive | full | dialogs (full только для ячеек с историей диалога)
+    batch_pipeline: str = "naive"
     batch_ask: bool = False  # вопрос анкеты в ответе этапа 1: на демо слегка хуже
+    batch_acknowledge: bool = False  # подтверждения правил в ответе FULL этапа 1
+    batch_history_context: bool = False  # прошлые реплики клиента в поиске FULL
     sqlite_path: Path = Path("var/energytool.sqlite")
     crm_webhook_url: str = ""  # пусто — заявка пишется в leads со статусом mock_sent
     leads_dir: Path = Path("var/leads")  # копия каждой заявки файлом <id>.txt
@@ -140,8 +143,10 @@ class Settings:
             log_format="text" if reader.text("LOG_FORMAT", "json") == "text" else "json",
             run_budget_sec=reader.integer("RUN_BUDGET_SEC", 1080, 60, 1200),
             fast_path_after_sec=reader.integer("FAST_PATH_SEC", 900, 0, 1200),
-            batch_pipeline="full" if reader.text("BATCH_PIPELINE") == "full" else "naive",
+            batch_pipeline=_parse_pipeline(reader.text("BATCH_PIPELINE", "naive")),
             batch_ask=reader.flag("BATCH_ASK", default=False),
+            batch_acknowledge=reader.flag("BATCH_ACKNOWLEDGE", default=False),
+            batch_history_context=reader.flag("BATCH_HISTORY_CONTEXT", default=False),
             sqlite_path=Path(reader.text("SQLITE_PATH", "var/energytool.sqlite")),
             crm_webhook_url=reader.url("CRM_WEBHOOK_URL"),
             leads_dir=Path(reader.text("LEADS_DIR", "var/leads")),
@@ -182,6 +187,8 @@ class Settings:
             "fast_path_after_sec": self.fast_path_after_sec,
             "batch_pipeline": self.batch_pipeline,
             "batch_ask": self.batch_ask,
+            "batch_acknowledge": self.batch_acknowledge,
+            "batch_history_context": self.batch_history_context,
             "sqlite_path": str(self.sqlite_path),
             "crm_webhook": bool(self.crm_webhook_url),
             "leads_dir": str(self.leads_dir),
@@ -259,3 +266,11 @@ class _EnvReader:
         if value in {"0", "false", "no", "off"}:
             return False
         return default
+
+
+BATCH_PIPELINES = ("naive", "full", "dialogs")
+
+
+def _parse_pipeline(value: str) -> str:
+    """Неизвестное значение — наивный путь: опечатка в переменной не должна ронять прогон."""
+    return value if value in BATCH_PIPELINES else "naive"

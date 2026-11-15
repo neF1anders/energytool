@@ -61,6 +61,12 @@ class AnswerQuestion:
     ask_in_batch: bool = True  # добавлять вопрос анкеты в ответ (проверяется на eval)
     condenser: QuestionCondenser | None = None  # вопрос для поиска из истории диалога
     with_guardrails: bool = True  # подкладывать разделы-ограничения базы (guardrails.py)
+    # подтверждения из трассы правил в ответе FULL: в батче модель пересказывает их
+    # служебной фразой («Подтверждаю, что вам нужен…»), эталоны так не пишут
+    acknowledge_in_batch: bool = False
+    # FULL только для диалогов: одиночный вопрос извлекателю нечего сжимать, а наивный
+    # путь на них проверен платформой и вдвое быстрее
+    full_for_dialogs_only: bool = False
 
     def __call__(self, case_id: str, cell: str, mode: AnswerMode = AnswerMode.FULL) -> Reply:
         started = time.perf_counter()
@@ -79,7 +85,7 @@ class AnswerQuestion:
         history = parse_transcript(cell)
         trace.turn = sum(1 for m in history if m.role is Role.USER)
         question = last_user_message(history) or cell.strip()
-        if mode is AnswerMode.FULL and self.extractor is not None and self.qualifier is not None:
+        if self._takes_full_path(mode, trace.turn):
             plan = self._full_plan(history, question, trace)
             if plan is not None:
                 return self._write(plan, history, trace)
@@ -93,6 +99,11 @@ class AnswerQuestion:
             template_only=mode is AnswerMode.NO_LLM,
         )
         return self._write(plan, history, trace)
+
+    def _takes_full_path(self, mode: AnswerMode, user_turns: int) -> bool:
+        if mode is not AnswerMode.FULL or self.extractor is None or self.qualifier is None:
+            return False
+        return user_turns > 1 or not self.full_for_dialogs_only
 
     def _full_plan(
         self, history: list[Message], question: str, trace: TurnTrace
@@ -110,7 +121,16 @@ class AnswerQuestion:
             trace.timings_ms["extract"] = _ms(started)
         user_text = " ".join(m.text for m in history if m.role is Role.USER)
         step = self.qualifier.step(state, extraction, user_text, "batch", trace)
-        plan = replace(step.plan, answer_question=question)
+        # FULL получает то же, что наивный путь: разделы-ограничения, подсказки для
+        # вопроса и признак «в базе ответа нет»; иначе выигрыш извлекателя на диалогах
+        # съедается потерями на одиночных вопросах
+        plan = replace(
+            step.plan,
+            answer_question=question,
+            evidence=(*step.plan.evidence, *self._guard_evidence(step.knowledge, trace)),
+            weak_evidence=step.knowledge.below_floor,
+            acknowledge=step.plan.acknowledge if self.acknowledge_in_batch else (),
+        )
         return plan if self.ask_in_batch else replace(plan, ask=None)
 
     def _write(self, plan: ReplyPlan, history: list[Message], trace: TurnTrace) -> Reply:

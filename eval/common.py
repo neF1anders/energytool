@@ -56,7 +56,7 @@ def save_json(path: Path, data: Any) -> None:
 
 
 def results_path(kind: str, suffix: str = "md") -> Path:
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
     path = EVAL_DATA / "results" / f"{kind}-{stamp}.{suffix}"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
