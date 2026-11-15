@@ -86,6 +86,7 @@ class Settings:
     batch_ask: bool = False  # вопрос анкеты в ответе этапа 1: на демо слегка хуже
     sqlite_path: Path = Path("var/energytool.sqlite")
     crm_webhook_url: str = ""  # пусто — заявка пишется в leads со статусом mock_sent
+    leads_dir: Path = Path("var/leads")  # копия каждой заявки файлом <id>.txt
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Settings:
@@ -125,6 +126,7 @@ class Settings:
             batch_ask=reader.flag("BATCH_ASK", default=False),
             sqlite_path=Path(reader.text("SQLITE_PATH", "var/energytool.sqlite")),
             crm_webhook_url=reader.url("CRM_WEBHOOK_URL"),
+            leads_dir=Path(reader.text("LEADS_DIR", "var/leads")),
         )
 
     def require_llm(self) -> None:
@@ -164,6 +166,7 @@ class Settings:
             "batch_ask": self.batch_ask,
             "sqlite_path": str(self.sqlite_path),
             "crm_webhook": bool(self.crm_webhook_url),
+            "leads_dir": str(self.leads_dir),
         }
 
 

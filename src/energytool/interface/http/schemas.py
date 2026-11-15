@@ -58,3 +58,19 @@ class Health(BaseModel):
     status: str
     chunks: int
     dense_ready: bool
+    model: str = ""
+    retrieval: str = ""
+
+
+class TraceStats(BaseModel):
+    requests: int
+    avg_ms: float | None
+    last_ms: float | None
+    llm_calls: int
+
+
+class TraceFeed(BaseModel):
+    """Лента мониторинга: последние трассы всех сессий и сводка по ним."""
+
+    stats: TraceStats
+    items: list[dict[str, Any]]

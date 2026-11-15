@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="EnergyTool AI — чат-консультант, заявки и мониторинг работы ассистента">
+  <title>EnergyTool AI</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="workspace" aria-label="Рабочая область EnergyTool AI">
+    <button class="monitor-toggle" id="openAdmin" type="button" aria-controls="adminPanel" aria-expanded="false"><span class="pulse-dot"></span> Мониторинг</button>
+    <section class="hero">
+      <span class="hero-tag">ИИ-консультант для сайта</span>
+      <h1>Energytool AI</h1>
+      <p>Опишите задачу своими словами: вырос счёт, нужен учёт по объектам, потери или солнечная станция. Консультант ответит по базе знаний, задаст уточняющие вопросы и передаст менеджеру заявку с брифом.</p>
+      <div class="hero-actions">
+        <button class="hero-primary" type="button" data-open-chat>Начать консультацию</button>
+        <button class="hero-secondary" type="button" data-open-leads>Заявки менеджера</button>
+      </div>
+      <ul class="hero-points">
+        <li><strong>База знаний</strong><span>ответы только по документам Energytool</span></li>
+        <li><strong>Анкета по ходу диалога</strong><span>пункты опросного листа заполняются сами</span></li>
+        <li><strong>Заявка с брифом</strong><span>менеджер звонит уже с расчётом, бриф скачивается .txt</span></li>
+      </ul>
+    </section>
+  </main>
+
+  <button class="chat-fab" id="chatFab" type="button" aria-label="Открыть чат" aria-controls="chatWidget" aria-expanded="false">Чат-бот</button>
+  <section class="chat-widget" id="chatWidget" aria-label="Чат EnergyTool" aria-hidden="true">
+    <header class="chat-header">
+      <div><span class="bot-avatar">E</span><div><strong>EnergyTool AI</strong><small><i></i> <span id="dialogState">онлайн</span></small></div></div>
+      <div><button id="toggleLead" type="button" title="Оставить заявку" class="lead-toggle">Заявка</button><button id="resetChat" type="button" title="Новый диалог">↻</button><button id="closeChat" type="button" title="Закрыть">×</button></div>
+    </header>
+    <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
+    <form class="lead-form" id="leadForm" novalidate>
+      <div class="lead-form-head"><strong>Заявка менеджеру</strong><button type="button" id="closeLead" title="Свернуть">×</button></div>
+      <div class="lead-grid">
+        <input name="name" required maxlength="200" placeholder="ФИО *" autocomplete="name">
+        <input name="phone" required maxlength="40" placeholder="Телефон *" autocomplete="tel" inputmode="tel">
+        <input name="company" required maxlength="300" placeholder="Компания *" autocomplete="organization">
+        <input name="position" maxlength="200" placeholder="Должность">
+        <input name="email" type="email" maxlength="200" placeholder="E-mail" autocomplete="email">
+      </div>
+      <label class="consent"><input name="pd_consent" type="checkbox"> Согласен на обработку персональных данных</label>
+      <p class="lead-error" id="leadError" role="alert"></p>
+      <button type="submit">Отправить заявку</button>
+    </form>
+    <form class="chat-input" id="chatForm">
+      <textarea id="chatText" rows="1" maxlength="4000" placeholder="Напишите сообщение…"></textarea>
+      <button type="submit" aria-label="Отправить">↑</button>
+    </form>
+  </section>
+
+  <aside class="admin-panel" id="adminPanel" aria-hidden="true">
+    <header><h2>Мониторинг AI</h2><button id="closeAdmin" type="button" title="Скрыть мониторинг">×</button></header>
+    <div class="health-strip"><span class="status-lamp" id="statusLamp"></span><div><strong id="healthTitle">Проверяем сервис…</strong><small id="healthMeta">—</small></div><button id="refreshAdmin" type="button">Обновить</button></div>
+    <div class="metric-grid">
+      <article><span>Запросов</span><strong id="metricRequests">0</strong><small>в ленте</small></article>
+      <article><span>Среднее время</span><strong id="metricAvg">—</strong><small>полный pipeline</small></article>
+      <article><span>Последний ответ</span><strong id="metricLast">—</strong><small>end-to-end</small></article>
+      <article><span>Вызовы моделей</span><strong id="metricCalls">0</strong><small>chat · embed · rerank</small></article>
+    </div>
+    <nav class="admin-tabs" role="tablist">
+      <button type="button" role="tab" data-tab="traces" aria-selected="true">Трассы</button>
+      <button type="button" role="tab" data-tab="leads" aria-selected="false">Заявки <span id="leadCount" class="tab-count">0</span></button>
+    </nav>
+    <div class="admin-section" data-pane="traces"><div class="admin-section-title"><h3>Последние трассы</h3><button id="clearLogs" type="button" title="Скрыть трассы до текущего момента (история в базе сохраняется)">Очистить</button></div><div class="trace-list" id="traceList"><div class="empty-state">Пока нет запросов. Откройте чат и задайте вопрос.</div></div></div>
+    <div class="admin-section" data-pane="leads" hidden><div class="admin-section-title"><h3>Заявки</h3><a class="plain-link" href="/leads" target="_blank" rel="noopener">Страница менеджера ↗</a></div><div class="lead-list" id="leadList"><div class="empty-state">Заявок пока нет.</div></div></div>
+  </aside>
+
+  <div class="lead-viewer" id="leadViewer" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="leadViewerTitle">
+    <div class="lead-viewer-card">
+      <header><div><h3 id="leadViewerTitle">Заявка</h3><small id="leadViewerMeta"></small></div><div><a id="leadDownload" class="download-btn" href="#" download>Скачать .txt</a><button id="closeViewer" type="button" title="Закрыть">×</button></div></header>
+      <div class="lead-viewer-body">
+        <section><h4>Бриф менеджеру</h4><pre id="leadBrief"></pre></section>
+        <section><h4>Переписка</h4><div id="leadDialog" class="lead-dialog"></div></section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

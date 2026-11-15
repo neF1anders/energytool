@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -18,6 +18,11 @@ from energytool.domain.slots import SlotStatus, SlotValue
 from energytool.domain.state import ConversationState, DialogState, Message, Role, SoftSignal
 from energytool.infrastructure.brief_render import TextBriefRenderer
 from energytool.infrastructure.storage.database import create_database
+from energytool.infrastructure.storage.lead_files import (
+    CompositeLeadSink,
+    TextFileLeadSink,
+    render_lead_file,
+)
 from energytool.infrastructure.storage.leads import SqliteLeadSink
 from energytool.infrastructure.storage.sqlite_sessions import SqliteSessionRepo
 from energytool.infrastructure.storage.state_codec import StateDecodeError, decode, encode
@@ -123,3 +128,44 @@ def test_lead_sink_statuses(tmp_path: Path, url: str, status_code: int, expected
     assert row["status"] == expected
     assert row["brief"]["contact"]["company"] == "Хлебозавод"
     assert len(posted) == (1 if url else 0)
+
+
+def test_lead_sink_get_returns_row_or_none(tmp_path: Path) -> None:
+    engine = create_database(tmp_path / "db.sqlite")
+    SqliteSessionRepo(engine).save(decode(encode(rich_state())), TurnTrace("s", 1, "chat"))
+    sink = SqliteLeadSink(engine)
+    sink.send(make_lead())
+    assert sink.get("L1") == sink.list()[0]
+    assert sink.get("nope") is None
+
+
+def test_recent_traces_newest_first_with_limit_and_since(tmp_path: Path) -> None:
+    moments = iter([NOW, NOW + timedelta(minutes=1), NOW + timedelta(minutes=2)])
+    repo = SqliteSessionRepo(create_database(tmp_path / "db.sqlite"), now=lambda: next(moments))
+    state = rich_state()
+    for turn in (1, 2, 3):
+        state.turn = turn
+        repo.save(state, TurnTrace(state.session_id, turn, "chat"))
+    assert [t["turn"] for t in repo.recent_traces(10)] == [3, 2, 1]
+    assert [t["turn"] for t in repo.recent_traces(2)] == [3, 2]
+    assert [t["turn"] for t in repo.recent_traces(10, since=NOW)] == [3, 2]
+    assert repo.recent_traces(1)[0]["created_at"] == (NOW + timedelta(minutes=2)).isoformat()
+
+
+def test_text_file_lead_sink_writes_brief(tmp_path: Path) -> None:
+    lead = make_lead()
+    TextFileLeadSink(tmp_path / "leads").send(lead)
+    text = (tmp_path / "leads" / "lead-L1.txt").read_text(encoding="utf-8")
+    assert text == render_lead_file("L1", lead.brief.session_id, NOW, lead.text)
+    assert text.startswith("Заявка Energytool #L1\nСоздана: 2026-11-12 10:00 UTC")
+    assert "Клиент: Иван, Хлебозавод" in text
+
+
+def test_composite_sink_keeps_lead_when_file_fails(tmp_path: Path) -> None:
+    engine = create_database(tmp_path / "db.sqlite")
+    SqliteSessionRepo(engine).save(decode(encode(rich_state())), TurnTrace("s", 1, "chat"))
+    blocker = tmp_path / "blocker"
+    blocker.write_text("файл на месте каталога")
+    primary = SqliteLeadSink(engine)
+    CompositeLeadSink(primary, [TextFileLeadSink(blocker)]).send(make_lead())
+    assert primary.get("L1") is not None
