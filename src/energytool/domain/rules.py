@@ -53,6 +53,22 @@ def _goal_is(state: ConversationState, goal: Goal) -> bool:
     return _value(state, "goal") == goal.value
 
 
+def _has_site(state: ConversationState) -> bool:
+    return _value(state, "site_kind") is not None
+
+
+def _solar_interest(state: ConversationState) -> bool:
+    """Клиент сам спрашивал о солнечной генерации (мягкий сигнал «mention»)."""
+    return any(
+        signal.source == "mention" and signal.product in (P.SOLAR_GRID, P.SOLAR_HYBRID)
+        for signal in state.soft_signals
+    )
+
+
+def _hybrid_interest(state: ConversationState) -> bool:
+    return _solar_interest(state) or _has_outages(state) or _goal_is(state, Goal.RELIABILITY)
+
+
 def _power_below(state: ConversationState) -> bool:
     power = _number(state, "max_power_kw")
     return power is not None and power < OREM_MIN_POWER_KW
@@ -104,7 +120,7 @@ def _manual_collection(state: ConversationState) -> bool:
     )
 
 
-RULES: tuple[Rule, ...] = (
+_FACT_RULES: tuple[Rule, ...] = (
     # --- выход на оптовый рынок ---
     Rule(
         "OREM_GATE",
@@ -205,19 +221,37 @@ RULES: tuple[Rule, ...] = (
         "00-reference/00-product-map",
     ),
     # --- солнечные станции ---
+    # Площадка — сильный довод, только если клиент сам интересовался генерацией: иначе
+    # ответ на наш же вопрос «крыша или земля?» тянет солнце в лидеры (eval/dialog/replay).
     Rule(
         "SOLAR_SITE",
         P.SOLAR_GRID,
-        lambda s: _value(s, "site_kind") is not None,
+        lambda s: _has_site(s) and _solar_interest(s),
         1.5,
+        "есть площадка под станцию: {site_kind}",
+        "20-products/23-solar › Размещение",
+    ),
+    Rule(
+        "SOLAR_SITE_WEAK",
+        P.SOLAR_GRID,
+        lambda s: _has_site(s) and not _solar_interest(s),
+        0.5,
         "есть площадка под станцию: {site_kind}",
         "20-products/23-solar › Размещение",
     ),
     Rule(
         "SOLAR_SITE_HYBRID",
         P.SOLAR_HYBRID,
-        lambda s: _value(s, "site_kind") is not None,
+        lambda s: _has_site(s) and _hybrid_interest(s),
         1.0,
+        "есть площадка под станцию: {site_kind}",
+        "20-products/23-solar › Размещение",
+    ),
+    Rule(
+        "SOLAR_SITE_HYBRID_WEAK",
+        P.SOLAR_HYBRID,
+        lambda s: _has_site(s) and not _hybrid_interest(s),
+        0.3,
         "есть площадка под станцию: {site_kind}",
         "20-products/23-solar › Размещение",
     ),
@@ -356,6 +390,22 @@ RULES: tuple[Rule, ...] = (
         "20-products/20-portfolio › Как продукты связаны между собой",
     ),
 )
+
+
+# Отказ клиента («солнечную не хотим») исключает продукт, пока он сам о нём не спросит:
+# иначе факты вроде «есть крыша» продолжают тянуть отвергнутое решение в лидеры.
+def _rejection_rule(product: Product) -> Rule:
+    return Rule(
+        f"REJECTED_{product.name}",
+        product,
+        lambda s: product in s.rejected,
+        EXCLUDE,
+        "клиент отказался от этого решения",
+        "диалог с клиентом",
+    )
+
+
+RULES: tuple[Rule, ...] = _FACT_RULES + tuple(_rejection_rule(p) for p in Product)
 
 
 # Priors: стартовая уверенность по типу компании (20-portfolio › Навигация по типу компании).

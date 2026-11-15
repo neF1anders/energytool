@@ -75,6 +75,7 @@ class LlmFactExtractor:
                         "slots": [(u.slot_id, u.value) for u in extraction.slot_updates],
                         "declined": list(extraction.declined),
                         "mentions": [p.value for p in extraction.mentions],
+                        "rejected": [p.value for p in extraction.rejected],
                         "search_query": extraction.search_query,
                     }
                 },
@@ -129,6 +130,7 @@ def parse_extraction(text: str, catalog: Sequence[SlotSpec]) -> Extraction:
         slot_updates=updates,
         declined=tuple(str(x) for x in _list(data, "declined") if str(x) in known),
         mentions=tuple(_products(_list(data, "mentions"))),
+        rejected=tuple(_products(_list(data, "rejected"))),
         wants_contact=bool(data.get("wants_contact", False)),
         search_query=str(data.get("search_query") or "").strip(),
         question=str(data.get("question") or "").strip(),

@@ -58,6 +58,8 @@ class ConversationState:
     last_cta_turn: int | None = None  # когда последний раз предлагали заявку
     turns_without_progress: int = 0
     leader_history: list[Product | None] = field(default_factory=list)  # для гистерезиса
+    # «не хотим солнечную»: продукт → ход отказа; снимается, если клиент сам о нём спросит
+    rejected: dict[Product, int] = field(default_factory=dict)
     history: list[Message] = field(default_factory=list)
 
     def value(self, slot_id: str) -> SlotScalar | None:

@@ -194,6 +194,8 @@ def _fill_trace(
         "rejected_updates": [[r.slot_id, r.reason] for r in reduction.rejected],
         "declined": list(extraction.declined),
         "mentions": [p.value for p in extraction.mentions],
+        "rejected": [p.value for p in extraction.rejected],
+        "refused_products": sorted(p.value for p in reduction.state.rejected),
         "search_query": extraction.search_query,
     }
     trace.dialog = {

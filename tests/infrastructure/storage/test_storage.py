@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -65,6 +66,16 @@ def test_state_codec_roundtrip() -> None:
 def test_state_codec_rejects_other_version() -> None:
     with pytest.raises(StateDecodeError):
         decode('{"v": 99}')
+
+
+def test_state_codec_keeps_rejections_and_reads_v1() -> None:
+    state = rich_state()
+    state.rejected = {Product.SOLAR_GRID: 6}
+    assert decode(encode(state)).rejected == {Product.SOLAR_GRID: 6}
+    v1 = json.loads(encode(rich_state()))
+    v1["v"] = 1
+    del v1["rejected"]
+    assert decode(json.dumps(v1, ensure_ascii=False)).rejected == {}
 
 
 def test_session_repo_saves_messages_and_traces(tmp_path: Path) -> None:

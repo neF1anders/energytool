@@ -9,7 +9,8 @@ from energytool.domain.products import Product
 from energytool.domain.slots import SlotStatus, SlotValue
 from energytool.domain.state import ConversationState, DialogState, Message, Role, SoftSignal
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+READABLE_VERSIONS = frozenset({1, 2})  # v1 — без отказов от продуктов (rejected)
 
 
 class StateDecodeError(ValueError):
@@ -31,6 +32,7 @@ def encode(state: ConversationState) -> str:
             "last_cta_turn": state.last_cta_turn,
             "turns_without_progress": state.turns_without_progress,
             "leader_history": [p.value if p else None for p in state.leader_history],
+            "rejected": {p.value: turn for p, turn in state.rejected.items()},
             "history": [[m.role.value, m.text, m.turn] for m in state.history],
         },
         ensure_ascii=False,
@@ -40,7 +42,7 @@ def encode(state: ConversationState) -> str:
 def decode(raw: str) -> ConversationState:
     try:
         data = json.loads(raw)
-        if data.get("v") != FORMAT_VERSION:
+        if data.get("v") not in READABLE_VERSIONS:
             raise StateDecodeError(f"версия состояния {data.get('v')} ≠ {FORMAT_VERSION}")
         return ConversationState(
             session_id=data["session_id"],
@@ -55,6 +57,7 @@ def decode(raw: str) -> ConversationState:
             last_cta_turn=data["last_cta_turn"],
             turns_without_progress=int(data["turns_without_progress"]),
             leader_history=[Product(p) if p else None for p in data["leader_history"]],
+            rejected={Product(p): int(t) for p, t in data.get("rejected", {}).items()},
             history=[Message(Role(r), str(t), int(n)) for r, t, n in data["history"]],
         )
     except (KeyError, TypeError, ValueError) as exc:

@@ -21,6 +21,7 @@ from difflib import SequenceMatcher
 
 from energytool.domain.contract import ContractRegistry
 from energytool.domain.extraction import Extraction, SlotUpdate
+from energytool.domain.products import Product
 from energytool.domain.slots import (
     DocumentStatus,
     SlotScalar,
@@ -79,14 +80,17 @@ def apply(
             slots[slot_id] = SlotValue(slot_id, None, SlotStatus.DECLINED, "", state.turn)
             accepted.append(slot_id)
     progressed = any(not registry.get(slot_id).contact for slot_id in accepted)
+    refused = _refusals(state, extraction)
     signals = list(state.soft_signals) + [
         SoftSignal(product=p, weight=MENTION_SIGNAL, turn=state.turn, source="mention")
         for p in extraction.mentions
+        if p not in refused
     ]
     new_state = replace(
         state,
         slots=slots,
         soft_signals=signals,
+        rejected=refused,
         turns_without_progress=0 if progressed else state.turns_without_progress + 1,
         asked=dict(state.asked),
         leader_history=list(state.leader_history),
@@ -242,3 +246,11 @@ def _coerce_bool(spec: SlotSpec, value: SlotScalar) -> SlotScalar | Rejection:
 
 def _normalize(text: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", text.lower().replace("ё", "е")).split())
+
+
+def _refusals(state: ConversationState, extraction: Extraction) -> dict[Product, int]:
+    """Отказ держится, пока клиент сам не спросит о продукте снова. Если в одной реплике
+    есть и упоминание, и отказ («солнечную не хотим»), побеждает отказ."""
+    refused = {p: turn for p, turn in state.rejected.items() if p not in extraction.mentions}
+    refused.update({p: state.turn for p in extraction.rejected})
+    return refused

@@ -33,8 +33,13 @@ CASES: list[tuple[str, dict[str, SlotScalar], dict[str, SlotScalar]]] = [
     ("PAIN_BILLS_SOLAR", {"goal": "reduce_bill"}, {}),
     ("GOAL_METERING", {"goal": "metering"}, {"goal": "reduce_bill"}),
     ("GOAL_LOSSES", {"goal": "loss_detection"}, {}),
-    ("SOLAR_SITE", {"site_kind": "roof"}, {}),
-    ("SOLAR_SITE_HYBRID", {"site_kind": "ground"}, {}),
+    ("SOLAR_SITE_WEAK", {"site_kind": "roof"}, {}),
+    ("SOLAR_SITE_HYBRID", {"site_kind": "ground", "goal": "reliability"}, {"site_kind": "ground"}),
+    (
+        "SOLAR_SITE_HYBRID_WEAK",
+        {"site_kind": "ground"},
+        {"site_kind": "ground", "goal": "reliability"},
+    ),
     ("SOLAR_DAY", {"daytime_share": "high"}, {"daytime_share": "low"}),
     ("SOLAR_DAY_WAREHOUSE", {"segment": "warehouse"}, {"segment": "industry"}),
     ("SOLAR_NIGHT", {"daytime_share": "low"}, {"daytime_share": "medium"}),
@@ -67,7 +72,30 @@ CASES: list[tuple[str, dict[str, SlotScalar], dict[str, SlotScalar]]] = [
 
 
 def test_every_rule_has_a_case() -> None:
-    assert {c[0] for c in CASES} == set(RULES_BY_ID)
+    # правила от мягких сигналов и отказов проверяются отдельными тестами ниже
+    state_rules = {"SOLAR_SITE"} | {r for r in RULES_BY_ID if r.startswith("REJECTED_")}
+    assert {c[0] for c in CASES} == set(RULES_BY_ID) - state_rules
+
+
+def test_site_is_strong_for_solar_only_after_client_asked_about_it() -> None:
+    state = state_from({"site_kind": "roof"})
+    assert not RULES_BY_ID["SOLAR_SITE"].when(state)
+    state.soft_signals.append(SoftSignal(P.SOLAR_GRID, 1.0, 1, "mention"))
+    assert RULES_BY_ID["SOLAR_SITE"].when(state)
+    assert not RULES_BY_ID["SOLAR_SITE_WEAK"].when(state)
+    assert RULES_BY_ID["SOLAR_SITE_HYBRID"].when(state)
+
+
+def test_rejected_product_is_excluded_even_with_supporting_facts() -> None:
+    state = state_with(segment="industry", site_kind="roof", goal="reduce_bill")
+    assert not score(state, RULES, PRIORS, ScoringParams()).ranked()[0].excluded
+    state.rejected = {P.SOLAR_GRID: 6, P.SOLAR_HYBRID: 6}
+    board = score(state, RULES, PRIORS, ScoringParams())
+    excluded = {s.product for s in board.excluded()}
+    assert {P.SOLAR_GRID, P.SOLAR_HYBRID} <= excluded
+    assert board.probability(P.SOLAR_GRID) == 0.0
+    (hit,) = [h for h in board.trace if h.rule_id == "REJECTED_SOLAR_GRID"]
+    assert hit.weight == EXCLUDE and "отказался" in hit.text
 
 
 @pytest.mark.parametrize(("rule_id", "fires", "silent"), CASES, ids=[c[0] for c in CASES])

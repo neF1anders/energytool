@@ -67,6 +67,23 @@ def test_declined_and_mentions() -> None:
     assert result.state.soft_signals[0].product is Product.PHOTO
 
 
+def test_rejection_is_kept_and_wins_over_same_turn_mention() -> None:
+    solar = (Product.SOLAR_GRID, Product.SOLAR_HYBRID)
+    result = reduce("не хотим солнечную", rejected=solar, mentions=(Product.SOLAR_GRID,))
+    assert set(result.state.rejected) == set(solar)
+    assert result.state.soft_signals == []
+    later = apply(result.state, Extraction(Intent.INFO), REG, "16 счётчиков")
+    assert set(later.state.rejected) == set(solar)
+
+
+def test_asking_about_rejected_product_again_lifts_rejection() -> None:
+    state = state_with()
+    state.rejected = {Product.SOLAR_GRID: 1, Product.SOLAR_HYBRID: 1}
+    asked = Extraction(Intent.QUESTION, mentions=(Product.SOLAR_GRID,))
+    result = apply(state, asked, REG, "а сетевая станция сколько стоит?")
+    assert set(result.state.rejected) == {Product.SOLAR_HYBRID}
+
+
 def test_original_state_is_not_mutated() -> None:
     state = state_with()
     apply(

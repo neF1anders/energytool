@@ -36,6 +36,7 @@ class Extraction:
     slot_updates: tuple[SlotUpdate, ...] = ()
     declined: tuple[str, ...] = ()  # slot_id, на которые клиент ответил «не знаю/не скажу»
     mentions: tuple[Product, ...] = ()  # продукты, о которых клиент спросил прямо
+    rejected: tuple[Product, ...] = ()  # продукты, от которых клиент прямо отказался
     wants_contact: bool = False
     search_query: str = ""  # самодостаточный запрос для поиска с учётом истории
     question: str = ""  # вопрос клиента, если есть, своими словами модели

@@ -26,6 +26,7 @@ GOOD = {
     ],
     "declined": ["region", "unknown_slot"],
     "mentions": ["orem", "teleport"],
+    "rejected": ["solar_grid", "solar_hybrid", "moon"],
     "wants_contact": False,
     "search_query": "выход на оптовый рынок 1,1 МВт",
     "question": "Подходим ли мы?",
@@ -41,6 +42,7 @@ def test_parse_keeps_valid_items_only() -> None:
     ]
     assert extraction.declined == ("region",)
     assert extraction.mentions == (Product.OREM,)
+    assert extraction.rejected == (Product.SOLAR_GRID, Product.SOLAR_HYBRID)
     assert extraction.search_query.startswith("выход")
 
 
@@ -79,3 +81,7 @@ def test_extractor_retries_once_on_bad_json() -> None:
         [Message(Role.USER, "x", 1)], ConversationState("s"), CATALOG
     )
     assert extraction.intent is Intent.INFO
+
+
+def test_parse_without_rejected_is_empty() -> None:
+    assert parse_extraction('{"intent": "info"}', CATALOG).rejected == ()
