@@ -72,11 +72,21 @@ class Settings:
     max_tokens: int = 1024
     max_workers: int = 4
     top_k: int = 4
+    answer_top_k: int = 8  # разделов в ответе этапа 1; TOP_K платформы на него не влияет
+    answer_keep_ratio: float = 0.4  # отсечение разделов слабее 0.4 от лучшего скора реранкера
+    answer_keep_floor: float = 0.25
+    answer_min_score: float = 0.15  # лучший скор ниже — в базе нет ответа (отказ или специалист)
+    answer_context_tokens: int = 5000  # бюджет найденных разделов в промпте этапа 1
+    batch_condense: bool = (
+        False  # вопрос для поиска из истории диалога (один вызов LLM); на eval без прироста
+    )
+    batch_guardrails: bool = True  # разделы-ограничения базы в ответе этапа 1
     reranker_top_n: int = 4
     timeouts: Timeouts = field(default_factory=Timeouts)
     max_retries: int = 3
     disable_thinking: bool = True
     embedding_cache_dir: Path | None = None
+    llm_cache_dir: Path | None = None  # только разработка: кэш ответов моделей на диске
     retrieval_config: str = "hybrid_rerank"
     log_level: str = "INFO"
     log_format: LogFormat = "json"
@@ -112,10 +122,18 @@ class Settings:
             max_tokens=reader.integer("MAX_TOKENS", 1024, 128, 8192),
             max_workers=reader.integer("MAX_WORKERS", 4, 1, 16),
             top_k=reader.integer("TOP_K", 4, 1, 30),
+            answer_top_k=reader.integer("ANSWER_TOP_K", 8, 1, 30),
+            answer_keep_ratio=reader.number("ANSWER_KEEP_RATIO", 0.4, 0.0, 1.0),
+            answer_keep_floor=reader.number("ANSWER_KEEP_FLOOR", 0.25, 0.0, 1.0),
+            answer_min_score=reader.number("ANSWER_MIN_SCORE", 0.15, 0.0, 1.0),
+            answer_context_tokens=reader.integer("ANSWER_CONTEXT_TOKENS", 5000, 500, 20000),
+            batch_condense=reader.flag("BATCH_CONDENSE", default=False),
+            batch_guardrails=reader.flag("BATCH_GUARDRAILS", default=True),
             reranker_top_n=reader.integer("RERANKER_TOP_N", 4, 1, 30),
             max_retries=reader.integer("LLM_MAX_RETRIES", 3, 0, 5),
             disable_thinking=reader.flag("LLM_DISABLE_THINKING", default=True),
             embedding_cache_dir=Path(cache) if (cache := reader.text("EMB_CACHE_DIR")) else None,
+            llm_cache_dir=Path(llm_cache) if (llm_cache := reader.text("LLM_CACHE_DIR")) else None,
             retrieval_config=reader.text("RETRIEVAL_CONFIG", "hybrid_rerank"),
             log_level=reader.text("LOG_LEVEL", "INFO").upper(),
             log_format="text" if reader.text("LOG_FORMAT", "json") == "text" else "json",

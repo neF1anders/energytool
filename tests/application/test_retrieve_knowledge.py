@@ -130,3 +130,17 @@ def test_unknown_config_lists_available() -> None:
     with pytest.raises(KeyError, match="hybrid_rerank"):
         get_config("nope")
     assert "bm25" in CONFIGS
+
+
+def test_weak_sections_are_dropped_relative_to_best_rerank_score() -> None:
+    text = TextSnippet("порог оптового рынка мощность")
+    everything = ids(retrieve()((text, BudgetSnippet(top_k=4, fallback_k=0))))
+    strong = ids(retrieve()((text, BudgetSnippet(top_k=4, fallback_k=0, keep_ratio=0.9))))
+    assert len(everything) > 1
+    assert strong == ["orem#порог"]
+
+
+def test_weak_sections_stay_when_reranker_failed() -> None:
+    query = (TextSnippet("порог оптового рынка мощность"), BudgetSnippet(top_k=4, keep_floor=0.9))
+    result = retrieve(reranker=OverlapReranker(fail=True))(query)
+    assert len(ids(result)) > 1

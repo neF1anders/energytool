@@ -115,6 +115,10 @@ class BudgetSnippet:
     fallback_k: int = 2  # top-k по всей базе без области — страховка роутинга
     max_tokens: int = 2500
     min_rerank_score: float | None = None
+    # отсечение слабых разделов после реранкера: остаются разделы со скором не ниже
+    # max(keep_floor, keep_ratio · лучший скор); лучший раздел остаётся всегда
+    keep_ratio: float = 0.0
+    keep_floor: float = 0.0
 
 
 Snippet = TextSnippet | ScopeSnippet | BoostSnippet | PinSnippet | IdSnippet | BudgetSnippet
@@ -123,7 +127,8 @@ KnowledgeQuery = tuple[Snippet, ...]
 
 # --- результат --------------------------------------------------------------------------------
 
-Origin = Literal["ranked", "pinned", "fallback", "by_id"]
+# hint — раздел «какие сведения могут понадобиться»: подсказка для уточняющего вопроса
+Origin = Literal["ranked", "pinned", "fallback", "by_id", "hint"]
 
 
 @dataclass(frozen=True, slots=True)

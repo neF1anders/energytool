@@ -15,9 +15,13 @@ import statistics
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from pathlib import Path
 
 from energytool.application.answer_question import AnswerMode, AnswerQuestion
+from energytool.application.build_index import KnowledgeIndex
+from energytool.application.rerank_calibration import rerank_scores_calibrated
+from energytool.application.retrieval_stages import get_config
 from energytool.bootstrap import Container, build
 from energytool.domain.knowledge import BudgetSnippet
 from energytool.infrastructure.logs import log_context
@@ -33,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 OUTPUT = Path("submission.csv")
 PROGRESS_EVERY = 10
+UNCALIBRATED_TOP_K = 5  # без отсечения по скору длинный хвост разделов только шумит
 
 
 class Deadline:
@@ -80,7 +85,7 @@ def answer_all(
     index = container.build_index()
     settings = container.settings
     retrieve = container.retriever(index)
-    budget = BudgetSnippet(top_k=settings.top_k, fallback_k=1)
+    budget = answer_budget(container, index)
     full = settings.batch_pipeline == "full"
     use_case = AnswerQuestion(
         retrieve=retrieve,
@@ -90,6 +95,8 @@ def answer_all(
         extractor=container.extractor() if full else None,
         qualifier=container.qualifier(retrieve, budget) if full else None,
         ask_in_batch=settings.batch_ask,
+        condenser=container.condenser() if settings.batch_condense else None,
+        with_guardrails=settings.batch_guardrails,
     )
     answers: dict[str, str] = {}
     durations: list[float] = []
@@ -117,6 +124,24 @@ def answer_all(
                 print(f"  {done}/{len(questions)} за {deadline.elapsed():.0f} с", flush=True)
     log_summary(durations, modes, deadline, answers)
     return answers
+
+
+def answer_budget(container: Container, index: KnowledgeIndex) -> BudgetSnippet:
+    """Бюджет поиска для ответа. Пороги по скору включаются, только если реранкер отдаёт
+    вероятности 0..1 (application/rerank_calibration.py); иначе — обычный top-k."""
+    settings = container.settings
+    plain = BudgetSnippet(
+        top_k=settings.answer_top_k, fallback_k=1, max_tokens=settings.answer_context_tokens
+    )
+    uses_reranker = get_config(settings.retrieval_config).use_reranker
+    if not uses_reranker or not rerank_scores_calibrated(container.reranker, index.chunks.all()):
+        return replace(plain, top_k=min(settings.answer_top_k, UNCALIBRATED_TOP_K))
+    return replace(
+        plain,
+        min_rerank_score=settings.answer_min_score,
+        keep_ratio=settings.answer_keep_ratio,
+        keep_floor=settings.answer_keep_floor,
+    )
 
 
 def log_summary(

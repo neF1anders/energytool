@@ -26,6 +26,7 @@ from energytool.infrastructure.index.factory import InMemoryIndexFactory
 from energytool.infrastructure.kb.loader import FileKnowledgeSource, find_knowledge_base
 from energytool.infrastructure.kb.splitter import MarkdownSectionSplitter
 from energytool.infrastructure.kb.tagmap import KbSectionTagger
+from energytool.infrastructure.llm.condenser import LlmQuestionCondenser
 from energytool.infrastructure.llm.embedder import GatewayEmbedder
 from energytool.infrastructure.llm.extractor import LlmFactExtractor
 from energytool.infrastructure.llm.gateway import LlmGateway
@@ -86,6 +87,9 @@ class Container:
 
     def extractor(self) -> LlmFactExtractor:
         return LlmFactExtractor(self.gateway)
+
+    def condenser(self) -> LlmQuestionCondenser:
+        return LlmQuestionCondenser(self.gateway)
 
     def reply_writer(self) -> LlmReplyWriter:
         return LlmReplyWriter(self.gateway)

@@ -26,24 +26,28 @@ from energytool.infrastructure.llm.prompts import (
     RESPONDER_ASK,
     RESPONDER_ASK_WHY,
     RESPONDER_EXAMPLES,
-    RESPONDER_NO_ASK,
+    RESPONDER_HINTS,
+    RESPONDER_LIMITS,
+    RESPONDER_QUESTION,
     RESPONDER_SYSTEM,
     RESPONDER_USER,
     RESPONDER_VERSION,
+    RESPONDER_WEAK_EVIDENCE,
     TEMPLATE_ACK_EMPTY,
 )
 
 logger = logging.getLogger(__name__)
 
 HARD_WORD_LIMIT = 150  # лимит кейса
-EVIDENCE_CHARS = 1800  # на один фрагмент в промпте
+EVIDENCE_CHARS = 2400  # на один фрагмент в промпте
 HISTORY_TURNS = 6
 REPLY_MAX_TOKENS = 450
+# своя температура: TEMPERATURE платформы подобрана под учебный пример и может быть выше
+REPLY_TEMPERATURE = 0.1
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 _MARKDOWN = re.compile(r"(\*\*|__|`|^#+\s*|^\s*[-*•]\s+|^\s*\d+[.)]\s+)", re.MULTILINE)
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
-_ORIGIN_NOTE = {"pinned": " (ограничения продукта: не утверждай обратного)"}
 
 
 class LlmReplyWriter:
@@ -61,10 +65,10 @@ class LlmReplyWriter:
                 used_llm=False,
                 evidence_ids=evidence_ids,
             )
+        messages = build_messages(plan, history)
         try:
             result = self._gateway.chat(
-                build_messages(plan, history),
-                max_tokens=self._max_tokens,
+                messages, temperature=REPLY_TEMPERATURE, max_tokens=self._max_tokens
             )
         except LlmGatewayError as exc:
             logger.error("responder degraded to template: %s", exc)
@@ -124,14 +128,12 @@ def _sentence(text: str) -> str:
 
 
 def guidance(plan: ReplyPlan) -> str:
-    extra = ""
+    extra = RESPONDER_WEAK_EVIDENCE if plan.weak_evidence else ""
     if plan.acknowledge:
         extra += RESPONDER_ACK.format(facts="; ".join(plan.acknowledge))
     if plan.ask is not None:
         why = RESPONDER_ASK_WHY.format(why=plan.ask.why) if plan.ask.why else ""
         extra += RESPONDER_ASK.format(ask=plan.ask.ask, why=why)
-    else:
-        extra += RESPONDER_NO_ASK
     return extra
 
 
@@ -141,17 +143,24 @@ def build_messages(plan: ReplyPlan, history: Sequence[Message]) -> list[ChatMess
         messages.append(
             {
                 "role": "user",
-                "content": RESPONDER_USER.format(evidence=evidence, history="", question=question),
+                "content": RESPONDER_USER.format(evidence=evidence, limits="", question=question),
             }
         )
         messages.append({"role": "assistant", "content": answer})
+    facts = [e for e in plan.evidence if e.origin not in ("pinned", "hint")]
+    limits = [e for e in plan.evidence if e.origin == "pinned"]
+    hints = [e for e in plan.evidence if e.origin == "hint"]
+    question = RESPONDER_QUESTION.format(
+        history=format_history(history), question=(plan.answer_question or "") + guidance(plan)
+    )
     messages.append(
         {
             "role": "user",
             "content": RESPONDER_USER.format(
-                evidence=format_evidence(plan.evidence),
-                history=format_history(history),
-                question=(plan.answer_question or "") + guidance(plan),
+                evidence=format_evidence(facts),
+                limits=(RESPONDER_LIMITS.format(limits=format_limits(limits)) if limits else "")
+                + (RESPONDER_HINTS.format(hints=format_limits(hints)) if hints else ""),
+                question=question,
             ),
         }
     )
@@ -162,9 +171,12 @@ def format_evidence(evidence: Sequence[Evidence]) -> str:
     if not evidence:
         return "(ничего не найдено)"
     return "\n\n".join(
-        f"[{i}] {e.chunk.path}{_ORIGIN_NOTE.get(e.origin, '')}\n{_body(e)[:EVIDENCE_CHARS]}"
-        for i, e in enumerate(evidence, 1)
+        f"[{i}] {e.chunk.path}\n{_body(e)[:EVIDENCE_CHARS]}" for i, e in enumerate(evidence, 1)
     )
+
+
+def format_limits(limits: Sequence[Evidence]) -> str:
+    return "\n\n".join(f"{e.chunk.path}\n{_body(e)[:EVIDENCE_CHARS]}" for e in limits)
 
 
 def format_history(history: Sequence[Message]) -> str:
