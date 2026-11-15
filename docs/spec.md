@@ -158,6 +158,8 @@ Priors по сегменту — из `20-portfolio › Навигация по 
 
 
 Реализация **[M3]** — `domain/rules.py` (`RULES`, `PRIORS`), `domain/scorer.py`. К таблице выше добавлены: `PAIN_BILLS_SOLAR` (+0.5 СЭС), `GOAL_METERING` (+1.5), `GOAL_LOSSES` (+2), `SOLAR_SITE_HYBRID` (+1), `SOLAR_NIGHT_HYBRID` (+1 гибриду при вечернем профиле — демо 14), `SOLAR_SLATE_HYBRID` (исключить), `SOLAR_SLATE_UNKNOWN` (флаг «уточнить возраст»), `OREM_ALREADY_PLATFORM` (+1 платформе), `PHOTO_MANUAL` (+0.5: часть приборов без связи — `20-portfolio › Как продукты связаны`), `HOUSING_LOAD`. Каждое правило и его отрицание покрыты тестом (`tests/domain/test_rules_and_scorer.py`). Priors по сегментам — по `20-portfolio › Навигация по типу компании` (например, склад: СЭС +1.2, платформа +0.4; сетевая: потери +1.2, платформа +1.0, фото +0.8). Тексты правил подставляют значения слотов (`мощность 1 100 кВт…`); флаги (`flag=True`) на балл не влияют.
+**[exp/dialog-steering]** Отказ клиента от продукта: `Extraction.rejected` → `ConversationState.rejected` (продукт → ход), правила `REJECTED_*` с весом EXCLUDE; снимается, когда клиент сам снова спрашивает о продукте. Площадка (`site_kind`) даёт солнцу +1.5 / гибриду +1.0 только при интересе клиента (упоминание солнца; для гибрида ещё отключения или цель «надёжность»), иначе +0.5 / +0.3. Отчёт — `docs/decisions.md` §9.
+
 ### 5.4 Dialogue Policy — `dialog_policy.py`
 
 ```python
