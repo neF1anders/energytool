@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from energytool.application.context_expansion import ContextExpander
 from energytool.application.guardrails import guard_origin, guard_query
 from energytool.application.knowledge_request import query_from_history
 from energytool.application.ports import (
@@ -27,6 +29,7 @@ from energytool.application.ports import (
     Telemetry,
 )
 from energytool.application.qualification import Qualifier, Retriever
+from energytool.application.style_shots import StyleShotSelector
 from energytool.application.trace import EvidenceRef, TurnTrace, collecting_llm_calls
 from energytool.application.transcript import last_user_message, parse_transcript
 from energytool.domain.contract import ContractRegistry
@@ -35,6 +38,7 @@ from energytool.domain.knowledge import (
     Evidence,
     KnowledgeQuery,
     KnowledgeResult,
+    Scope,
     TextSnippet,
 )
 from energytool.domain.reply import Reply, ReplyPlan
@@ -61,6 +65,11 @@ class AnswerQuestion:
     ask_in_batch: bool = True  # добавлять вопрос анкеты в ответ (проверяется на eval)
     condenser: QuestionCondenser | None = None  # вопрос для поиска из истории диалога
     with_guardrails: bool = True  # подкладывать разделы-ограничения базы (guardrails.py)
+    expand: ContextExpander | None = None  # соседи найденных разделов (context_expansion.py)
+    shots: StyleShotSelector | None = None  # ближайшие образцы ответов (style_shots.py)
+    shots_k: int = 3
+    # диалог: сколько разделов добавить по предыдущим репликам клиента (0 — не искать)
+    dialog_topic_k: int = 0
 
     def __call__(self, case_id: str, cell: str, mode: AnswerMode = AnswerMode.FULL) -> Reply:
         started = time.perf_counter()
@@ -83,16 +92,38 @@ class AnswerQuestion:
             plan = self._full_plan(history, question, trace)
             if plan is not None:
                 return self._write(plan, history, trace)
+        plan = self._naive_plan(history, question, mode, trace)
+        if self.shots is not None and not plan.template_only:
+            plan = replace(plan, shots=self.shots.select(cell, self.shots_k))
+        return self._write(plan, history, trace)
+
+    def naive_plan(self, cell: str) -> ReplyPlan:
+        """План ответа без генерации: те же поиск и ограничения, что и в ответе (для
+        подготовки примеров из образцов)."""
+        history = parse_transcript(cell)
+        question = last_user_message(history) or cell.strip()
+        trace = TurnTrace(session_id="style-shot", turn=0, mode="batch")
+        return self._naive_plan(history, question, AnswerMode.FAST, trace)
+
+    def _naive_plan(
+        self, history: list[Message], question: str, mode: AnswerMode, trace: TurnTrace
+    ) -> ReplyPlan:
         result = self._naive_retrieve(self._naive_query(history, mode), trace)
-        plan = ReplyPlan(
+        topic = self._dialog_topic(history, result, trace)
+        scope_mass = _merged_mass(result.scope_mass, topic.scope_mass)
+        known = {e.chunk.id for e in (*result.evidence, *topic.evidence)}
+        return ReplyPlan(
             answer_question=question,
-            evidence=(*result.evidence, *self._guard_evidence(result, trace)),
+            evidence=(
+                *self._expanded(result, trace),
+                *topic.evidence,
+                *self._guard_evidence(scope_mass, known, trace),
+            ),
             ask=None,
             offer_contact=False,
             weak_evidence=result.below_floor,
             template_only=mode is AnswerMode.NO_LLM,
         )
-        return self._write(plan, history, trace)
 
     def _full_plan(
         self, history: list[Message], question: str, trace: TurnTrace
@@ -133,16 +164,50 @@ class AnswerQuestion:
             self.budget,
         )
 
-    def _guard_evidence(self, found: KnowledgeResult, trace: TurnTrace) -> tuple[Evidence, ...]:
+    def _expanded(self, found: KnowledgeResult, trace: TurnTrace) -> tuple[Evidence, ...]:
+        if self.expand is None:
+            return found.evidence
+        evidence = self.expand(found.evidence)
+        trace.evidence.extend(
+            EvidenceRef(e.chunk.id, e.origin, 0.0) for e in evidence[len(found.evidence) :]
+        )
+        return evidence
+
+    def _dialog_topic(
+        self, history: list[Message], found: KnowledgeResult, trace: TurnTrace
+    ) -> KnowledgeResult:
+        """Разделы по предыдущим репликам клиента. Последняя реплика диалога часто короткая
+        («с чего начать?», «что понадобится?») и находит общие разделы; о каком решении идёт
+        речь, видно из начала диалога. Отсюда же — продукт для ограничений и подсказок."""
+        earlier = [m.text for m in history if m.role is Role.USER][:-1]
+        if self.dialog_topic_k <= 0 or not earlier:
+            return KnowledgeResult(evidence=())
+        budget = replace(self.budget, top_k=self.dialog_topic_k, fallback_k=0)
+        try:
+            result = self.retrieve((TextSnippet(" ".join(earlier)), budget))
+        except ExternalServiceError as exc:
+            logger.error("dialog topic lookup failed: %s", exc)
+            return KnowledgeResult(evidence=())
+        if result.below_floor:
+            return KnowledgeResult(evidence=())
+        known = {e.chunk.id for e in found.evidence}
+        fresh = tuple(
+            replace(e, origin="topic") for e in result.evidence if e.chunk.id not in known
+        )
+        trace.evidence.extend(EvidenceRef(e.chunk.id, e.origin, round(e.score, 4)) for e in fresh)
+        return replace(result, evidence=fresh)
+
+    def _guard_evidence(
+        self, scope_mass: Mapping[Scope, float], known: set[str], trace: TurnTrace
+    ) -> tuple[Evidence, ...]:
         """Разделы-ограничения, которых ещё нет среди найденных. Модели не вызываются."""
         if not self.with_guardrails:
             return ()
         try:
-            guards = self.retrieve(guard_query(found.scope_mass)).evidence
+            guards = self.retrieve(guard_query(scope_mass)).evidence
         except ExternalServiceError as exc:
             logger.error("guardrails lookup failed: %s", exc)
             return ()
-        known = {e.chunk.id for e in found.evidence}
         fresh = tuple(
             replace(e, origin=guard_origin(e.chunk.id)) for e in guards if e.chunk.id not in known
         )
@@ -168,6 +233,14 @@ class AnswerQuestion:
             trace.degraded.extend(str(n) for n in notes if str(n).endswith("_failed"))
             trace.fallback_used = any(str(n).startswith("fallback_added") for n in notes)
         return result
+
+
+def _merged_mass(main: Mapping[Scope, float], topic: Mapping[Scope, float]) -> dict[Scope, float]:
+    """Доли областей по последней реплике и по теме диалога с равным весом."""
+    if not topic:
+        return dict(main)
+    scopes = dict.fromkeys((*main, *topic))  # порядок фиксирован: при равных долях важен
+    return {s: (main.get(s, 0.0) + topic.get(s, 0.0)) / 2 for s in scopes}
 
 
 def _ms(started: float) -> float:

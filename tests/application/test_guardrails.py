@@ -80,3 +80,43 @@ def test_answer_without_guardrails_keeps_only_found_sections() -> None:
     writer = _Writer()
     AnswerQuestion(retrieve, writer, _Traces(), with_guardrails=False)("1", "Вопрос?")
     assert writer.plans[0].evidence == ()
+
+
+def test_dialog_topic_adds_sections_and_product_from_earlier_turns() -> None:
+    last = Evidence(chunk("general#начать", "с чего начать", Topic.GENERAL), 0.9, "ranked")
+    topic = Evidence(chunk("askue#цеха", "учёт", Product.METERING), 0.8, "ranked")
+    guard_queries: list[KnowledgeQuery] = []
+
+    def retrieve(query: KnowledgeQuery) -> KnowledgeResult:
+        texts = [s.text for s in query if isinstance(s, TextSnippet)]
+        if not texts:
+            guard_queries.append(query)
+            return KnowledgeResult(evidence=())
+        if texts == ["Хотим учёт в бизнес-центре."]:
+            return KnowledgeResult(evidence=(topic,), scope_mass={Product.METERING: 1.0})
+        return KnowledgeResult(evidence=(last,), scope_mass={Topic.GENERAL: 1.0})
+
+    writer = _Writer()
+    cell = (
+        "Пользователь: Хотим учёт в бизнес-центре.\nАссистент: Понял.\nПользователь: С чего начать?"
+    )
+    AnswerQuestion(retrieve, writer, _Traces(), dialog_topic_k=2)("1", cell)
+    assert [(e.chunk.id, e.origin) for e in writer.plans[0].evidence] == [
+        ("general#начать", "ranked"),
+        ("askue#цеха", "topic"),
+    ]
+    (ids,) = [s.ids for s in guard_queries[0] if isinstance(s, IdSnippet)]
+    assert PRODUCT_LIMIT_IDS[Product.METERING] in ids
+
+
+def test_single_question_makes_no_topic_lookup() -> None:
+    calls: list[KnowledgeQuery] = []
+
+    def retrieve(query: KnowledgeQuery) -> KnowledgeResult:
+        calls.append(query)
+        return KnowledgeResult(evidence=())
+
+    AnswerQuestion(retrieve, _Writer(), _Traces(), with_guardrails=False, dialog_topic_k=2)(
+        "1", "Вопрос?"
+    )
+    assert len(calls) == 1

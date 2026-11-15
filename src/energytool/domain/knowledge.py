@@ -127,8 +127,10 @@ KnowledgeQuery = tuple[Snippet, ...]
 
 # --- результат --------------------------------------------------------------------------------
 
-# hint — раздел «какие сведения могут понадобиться»: подсказка для уточняющего вопроса
-Origin = Literal["ranked", "pinned", "fallback", "by_id", "hint"]
+# hint — раздел «какие сведения могут понадобиться»: подсказка для уточняющего вопроса;
+# context — сосед найденного раздела по документу (application/context_expansion.py);
+# topic — раздел, найденный по предыдущим репликам клиента в диалоге
+Origin = Literal["ranked", "pinned", "fallback", "by_id", "hint", "context", "topic"]
 
 
 @dataclass(frozen=True, slots=True)

@@ -81,6 +81,15 @@ class Settings:
         False  # вопрос для поиска из истории диалога (один вызов LLM); на eval без прироста
     )
     batch_guardrails: bool = True  # разделы-ограничения базы в ответе этапа 1
+    dialog_topic_k: int = 0  # диалог: разделов по предыдущим репликам клиента (0 — выключено)
+    answer_expand: str = "none"  # none | siblings | file: соседи найденных разделов в промпте
+    answer_expand_tokens: int = 3000
+    answer_layout: str = "facts_first"  # facts_first | rules_first: порядок блоков промпта
+    answer_evidence_order: str = "best_first"  # best_first | best_last
+    style_examples_dir: Path | None = None  # разработка: каталог с примерами организаторов
+    style_examples_holdout: bool = False  # eval: не показывать образец с тем же вопросом
+    style_examples_mode: str = "block"  # block — список в системном промпте; turns — примеры
+    style_shots_k: int = 3  # ближайших образцов на вопрос в режиме turns
     reranker_top_n: int = 4
     timeouts: Timeouts = field(default_factory=Timeouts)
     max_retries: int = 3
@@ -128,7 +137,20 @@ class Settings:
             answer_min_score=reader.number("ANSWER_MIN_SCORE", 0.15, 0.0, 1.0),
             answer_context_tokens=reader.integer("ANSWER_CONTEXT_TOKENS", 5000, 500, 20000),
             batch_condense=reader.flag("BATCH_CONDENSE", default=False),
+            style_examples_dir=Path(examples)
+            if (examples := reader.text("STYLE_EXAMPLES_DIR"))
+            else None,
+            style_examples_holdout=reader.flag("STYLE_EXAMPLES_HOLDOUT", default=False),
+            style_examples_mode=reader.choice("STYLE_EXAMPLES_MODE", ("block", "turns")),
+            style_shots_k=reader.integer("STYLE_SHOTS_K", 3, 1, 10),
             batch_guardrails=reader.flag("BATCH_GUARDRAILS", default=True),
+            dialog_topic_k=reader.integer("DIALOG_TOPIC_K", 0, 0, 8),
+            answer_expand=reader.choice("ANSWER_EXPAND", ("none", "siblings", "file")),
+            answer_expand_tokens=reader.integer("ANSWER_EXPAND_TOKENS", 3000, 200, 20000),
+            answer_layout=reader.choice("ANSWER_LAYOUT", ("facts_first", "rules_first")),
+            answer_evidence_order=reader.choice(
+                "ANSWER_EVIDENCE_ORDER", ("best_first", "best_last")
+            ),
             reranker_top_n=reader.integer("RERANKER_TOP_N", 4, 1, 30),
             max_retries=reader.integer("LLM_MAX_RETRIES", 3, 0, 5),
             disable_thinking=reader.flag("LLM_DISABLE_THINKING", default=True),
@@ -236,6 +258,11 @@ class _EnvReader:
 
     def url(self, *names: str) -> str:
         return self.first(*names).rstrip("/")
+
+    def choice(self, name: str, options: tuple[str, ...]) -> str:
+        """Одно из значений; пустое или неизвестное — первое (умолчание)."""
+        value = self.text(name).lower()
+        return value if value in options else options[0]
 
     def integer(self, name: str, default: int, lower: int, upper: int) -> int:
         try:

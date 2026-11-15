@@ -20,8 +20,10 @@ from pathlib import Path
 
 from energytool.application.answer_question import AnswerMode, AnswerQuestion
 from energytool.application.build_index import KnowledgeIndex
+from energytool.application.context_expansion import ContextExpander, ExpandMode
 from energytool.application.rerank_calibration import rerank_scores_calibrated
 from energytool.application.retrieval_stages import get_config
+from energytool.application.style_shots import prepare_style_shots
 from energytool.bootstrap import Container, build
 from energytool.domain.knowledge import BudgetSnippet
 from energytool.infrastructure.logs import log_context
@@ -97,7 +99,19 @@ def answer_all(
         ask_in_batch=settings.batch_ask,
         condenser=container.condenser() if settings.batch_condense else None,
         with_guardrails=settings.batch_guardrails,
+        dialog_topic_k=settings.dialog_topic_k,
+        expand=ContextExpander(
+            ExpandMode(settings.answer_expand), index.chunks.all(), settings.answer_expand_tokens
+        ),
     )
+    if settings.style_examples_mode == "turns":
+        selector = prepare_style_shots(
+            container.style_examples(),
+            use_case.naive_plan,
+            container.embedder,
+            holdout=settings.style_examples_holdout,
+        )
+        use_case = replace(use_case, shots=selector, shots_k=settings.style_shots_k)
     answers: dict[str, str] = {}
     durations: list[float] = []
     modes: dict[str, int] = {}

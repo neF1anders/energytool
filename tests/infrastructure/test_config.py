@@ -67,3 +67,22 @@ def test_keys_never_leak_into_summary_or_repr() -> None:
         "model": PLATFORM_LLM_MODEL,
         "has_key": True,
     }
+
+
+def test_experiment_switches_default_off_and_ignore_unknown_values() -> None:
+    defaults = Settings.from_env({})
+    assert (defaults.answer_expand, defaults.answer_layout) == ("none", "facts_first")
+    assert (defaults.answer_evidence_order, defaults.dialog_topic_k) == ("best_first", 0)
+    assert defaults.style_examples_dir is None and defaults.style_examples_mode == "block"
+    tuned = Settings.from_env(
+        {
+            "ANSWER_EXPAND": "Siblings",
+            "ANSWER_LAYOUT": "sideways",
+            "DIALOG_TOPIC_K": "2",
+            "STYLE_EXAMPLES_DIR": "materials/data",
+            "STYLE_EXAMPLES_MODE": "turns",
+        }
+    )
+    assert (tuned.answer_expand, tuned.answer_layout) == ("siblings", "facts_first")
+    assert tuned.dialog_topic_k == 2 and tuned.style_examples_mode == "turns"
+    assert tuned.style_examples_dir == Path("materials/data")

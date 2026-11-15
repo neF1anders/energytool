@@ -227,6 +227,8 @@ _ORIGIN_ORDER: dict[Origin, int] = {
     "hint": 1,
     "ranked": 2,
     "fallback": 3,
+    "context": 4,
+    "topic": 4,
 }
 
 

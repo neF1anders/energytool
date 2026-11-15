@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import csv
 import re
 import sys
 import tomllib
@@ -117,6 +118,30 @@ def requirements() -> list[str]:
     return sorted(deps)
 
 
+STYLE_MODULE = f"{PACKAGE}.infrastructure.llm.style_examples"
+_EMBEDDED = "EMBEDDED: tuple[tuple[str, str], ...] = ()"
+
+
+def read_style_examples(directory: Path) -> list[tuple[str, str]]:
+    """Пары «вопрос — ответ» из примеров организаторов (demo_questions.csv, demo_output.csv)."""
+
+    def column(name: str, value: str) -> dict[str, str]:
+        with (directory / name).open(encoding="utf-8-sig", newline="") as f:
+            return {row["id"].strip(): row[value].strip() for row in csv.DictReader(f)}
+
+    questions = column("demo_questions.csv", "question")
+    answers = column("demo_output.csv", "answer")
+    return [(text, answers[qid]) for qid, text in questions.items() if answers.get(qid)]
+
+
+def with_style_examples(source: str, examples: list[tuple[str, str]]) -> str:
+    """Вписывает образцы ответов в модуль: файлы данных в ZIP класть нельзя, а в
+    репозитории материалов хакатона быть не должно."""
+    if _EMBEDDED not in source:
+        raise SubmissionBuildError(f"в {STYLE_MODULE} нет строки {_EMBEDDED!r}")
+    return source.replace(_EMBEDDED, f"EMBEDDED: tuple[tuple[str, str], ...] = {tuple(examples)!r}")
+
+
 _ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
@@ -141,12 +166,19 @@ def with_defaults(source: str, defaults: dict[str, str]) -> str:
     return source.replace(marker, marker + "\n".join(lines) + "\n", 1)
 
 
-def build(output: Path = DEFAULT_OUTPUT, defaults: dict[str, str] | None = None) -> Path:
+def build(
+    output: Path = DEFAULT_OUTPUT,
+    defaults: dict[str, str] | None = None,
+    style_examples: Path | None = None,
+) -> Path:
     modules = reachable_modules(ENTRY)
     files = {
         f"{flat_name(d)}.py": rewrite_imports(p.read_text(encoding="utf-8"))
         for d, p in modules.items()
     }
+    if style_examples is not None:
+        name = f"{flat_name(STYLE_MODULE)}.py"
+        files[name] = with_style_examples(files[name], read_style_examples(style_examples))
     files["solution.py"] = with_defaults(
         rewrite_imports(ENTRY.read_text(encoding="utf-8")), defaults or {}
     )
@@ -179,9 +211,15 @@ def main(argv: list[str] | None = None) -> int:
         metavar="KEY=VAL",
         help="умолчание переменной окружения, зашиваемое в solution.py (env платформы важнее)",
     )
+    parser.add_argument(
+        "--style-examples",
+        type=Path,
+        metavar="DIR",
+        help="каталог с demo_questions.csv и demo_output.csv: образцы ответов вписываются в ZIP",
+    )
     args = parser.parse_args(argv)
     try:
-        build(args.output, parse_defaults(args.env))
+        build(args.output, parse_defaults(args.env), args.style_examples)
     except SubmissionBuildError as exc:
         print(f"ошибка сборки: {exc}", file=sys.stderr)
         return 1

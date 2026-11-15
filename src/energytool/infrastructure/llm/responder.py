@@ -13,9 +13,10 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from energytool.domain.knowledge import Evidence
-from energytool.domain.reply import Reply, ReplyPlan
+from energytool.domain.reply import Reply, ReplyPlan, StyleExample
 from energytool.domain.state import Message, Role
 from energytool.infrastructure.llm.gateway import ChatMessage, LlmGateway, LlmGatewayError
 from energytool.infrastructure.llm.prompts import (
@@ -25,12 +26,19 @@ from energytool.infrastructure.llm.prompts import (
     RESPONDER_ACK,
     RESPONDER_ASK,
     RESPONDER_ASK_WHY,
+    RESPONDER_BEST_FIRST,
+    RESPONDER_BEST_LAST,
+    RESPONDER_CONTEXT,
     RESPONDER_EXAMPLES,
     RESPONDER_HINTS,
     RESPONDER_LIMITS,
     RESPONDER_QUESTION,
+    RESPONDER_STYLE_EXAMPLE,
+    RESPONDER_STYLE_EXAMPLES,
     RESPONDER_SYSTEM,
+    RESPONDER_TOPIC,
     RESPONDER_USER,
+    RESPONDER_USER_RULES_FIRST,
     RESPONDER_VERSION,
     RESPONDER_WEAK_EVIDENCE,
     TEMPLATE_ACK_EMPTY,
@@ -44,6 +52,7 @@ HISTORY_TURNS = 6
 REPLY_MAX_TOKENS = 450
 # своя температура: TEMPERATURE платформы подобрана под учебный пример и может быть выше
 REPLY_TEMPERATURE = 0.1
+REFUSAL_EXAMPLES = 2  # последние встроенные примеры: «нет данных» и «вне темы»
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 _MARKDOWN = re.compile(r"(\*\*|__|`|^#+\s*|^\s*[-*•]\s+|^\s*\d+[.)]\s+)", re.MULTILINE)
@@ -51,9 +60,21 @@ _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
 
 
 class LlmReplyWriter:
-    def __init__(self, gateway: LlmGateway, max_tokens: int = REPLY_MAX_TOKENS) -> None:
+    def __init__(
+        self,
+        gateway: LlmGateway,
+        max_tokens: int = REPLY_MAX_TOKENS,
+        *,
+        rules_first: bool = False,
+        best_last: bool = False,
+        style_examples: Sequence[StyleExample] = (),
+        style_holdout: bool = False,
+    ) -> None:
         self._gateway = gateway
         self._max_tokens = max_tokens
+        self._layout = PromptLayout(rules_first=rules_first, best_last=best_last)
+        self._style_examples = tuple(style_examples)
+        self._style_holdout = style_holdout
 
     def write(self, plan: ReplyPlan, history: Sequence[Message]) -> Reply:
         evidence_ids = tuple(e.chunk.id for e in plan.evidence)
@@ -65,7 +86,7 @@ class LlmReplyWriter:
                 used_llm=False,
                 evidence_ids=evidence_ids,
             )
-        messages = build_messages(plan, history)
+        messages = build_messages(plan, history, self._layout, self._examples_for(plan))
         try:
             result = self._gateway.chat(
                 messages, temperature=REPLY_TEMPERATURE, max_tokens=self._max_tokens
@@ -100,6 +121,12 @@ class LlmReplyWriter:
             },
         )
         return Reply(text=_with_cta(text, plan), used_llm=True, evidence_ids=evidence_ids)
+
+    def _examples_for(self, plan: ReplyPlan) -> tuple[StyleExample, ...]:
+        if not self._style_holdout:
+            return self._style_examples
+        question = plan.answer_question or ""
+        return tuple(e for e in self._style_examples if not e.is_about(question))
 
 
 def plan_template(plan: ReplyPlan) -> str:
@@ -137,34 +164,85 @@ def guidance(plan: ReplyPlan) -> str:
     return extra
 
 
-def build_messages(plan: ReplyPlan, history: Sequence[Message]) -> list[ChatMessage]:
-    messages: list[ChatMessage] = [{"role": "system", "content": RESPONDER_SYSTEM}]
-    for question, evidence, answer in RESPONDER_EXAMPLES:
+@dataclass(frozen=True, slots=True)
+class PromptLayout:
+    """Порядок блоков в промпте: что стоит ближе к вопросу клиента."""
+
+    rules_first: bool = False  # ограничения и подсказки перед фактами
+    best_last: bool = False  # самый близкий к вопросу фрагмент — последним
+
+    @property
+    def user_template(self) -> str:
+        return RESPONDER_USER_RULES_FIRST if self.rules_first else RESPONDER_USER
+
+    @property
+    def system(self) -> str:
+        order = RESPONDER_BEST_LAST if self.best_last else RESPONDER_BEST_FIRST
+        return RESPONDER_SYSTEM.format(evidence_order=order)
+
+
+DEFAULT_LAYOUT = PromptLayout()
+
+
+def build_messages(
+    plan: ReplyPlan,
+    history: Sequence[Message],
+    layout: PromptLayout = DEFAULT_LAYOUT,
+    style_examples: Sequence[StyleExample] = (),
+) -> list[ChatMessage]:
+    template = layout.user_template
+    system = layout.system + format_style_examples(style_examples)
+    messages: list[ChatMessage] = [{"role": "system", "content": system}]
+    # с образцами остаются только встроенные примеры отказа: в образцах отказов нет
+    builtin = RESPONDER_EXAMPLES[-REFUSAL_EXAMPLES:] if plan.shots else RESPONDER_EXAMPLES
+    for question, evidence, answer in builtin:
         messages.append(
             {
                 "role": "user",
-                "content": RESPONDER_USER.format(evidence=evidence, limits="", question=question),
+                "content": template.format(evidence=evidence, limits="", question=question),
             }
         )
         messages.append({"role": "assistant", "content": answer})
-    facts = [e for e in plan.evidence if e.origin not in ("pinned", "hint")]
-    limits = [e for e in plan.evidence if e.origin == "pinned"]
-    hints = [e for e in plan.evidence if e.origin == "hint"]
-    question = RESPONDER_QUESTION.format(
-        history=format_history(history), question=(plan.answer_question or "") + guidance(plan)
-    )
+    for shot in plan.shots:
+        asked = shot.history[-1].text if shot.history else shot.question
+        messages.append(
+            {"role": "user", "content": _user_content(shot.evidence, shot.history, asked, layout)}
+        )
+        messages.append({"role": "assistant", "content": shot.answer})
+    asked = (plan.answer_question or "") + guidance(plan)
     messages.append(
-        {
-            "role": "user",
-            "content": RESPONDER_USER.format(
-                evidence=format_evidence(facts),
-                limits=(RESPONDER_LIMITS.format(limits=format_limits(limits)) if limits else "")
-                + (RESPONDER_HINTS.format(hints=format_limits(hints)) if hints else ""),
-                question=question,
-            ),
-        }
+        {"role": "user", "content": _user_content(plan.evidence, history, asked, layout)}
     )
     return messages
+
+
+def _user_content(
+    evidence: Sequence[Evidence], history: Sequence[Message], asked: str, layout: PromptLayout
+) -> str:
+    facts = [e for e in evidence if e.origin not in ("pinned", "hint", "context", "topic")]
+    topic = [e for e in evidence if e.origin == "topic"]
+    if layout.best_last:
+        facts.reverse()
+    context = [e for e in evidence if e.origin == "context"]
+    limits = [e for e in evidence if e.origin == "pinned"]
+    hints = [e for e in evidence if e.origin == "hint"]
+    return layout.user_template.format(
+        evidence=format_evidence(facts)
+        + (RESPONDER_TOPIC.format(topic=format_limits(topic)) if topic else "")
+        + (RESPONDER_CONTEXT.format(context=format_limits(context)) if context else ""),
+        limits=(RESPONDER_LIMITS.format(limits=format_limits(limits)) if limits else "")
+        + (RESPONDER_HINTS.format(hints=format_limits(hints)) if hints else ""),
+        question=RESPONDER_QUESTION.format(history=format_history(history), question=asked),
+    )
+
+
+def format_style_examples(examples: Sequence[StyleExample]) -> str:
+    if not examples:
+        return ""
+    pairs = "\n\n".join(
+        RESPONDER_STYLE_EXAMPLE.format(question=e.question, answer=e.answer) for e in examples
+    )
+    return RESPONDER_STYLE_EXAMPLES.format(examples=pairs)
 
 
 def format_evidence(evidence: Sequence[Evidence]) -> str:

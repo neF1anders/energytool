@@ -19,6 +19,7 @@ from energytool.application.retrieve_knowledge import RetrieveKnowledge
 from energytool.domain.contract import ContractRegistry
 from energytool.domain.knowledge import BudgetSnippet
 from energytool.domain.policy import Thresholds
+from energytool.domain.reply import StyleExample
 from energytool.domain.rules import PRIORS, RULES
 from energytool.domain.scoring import ScoringParams
 from energytool.infrastructure.config import Settings
@@ -32,6 +33,7 @@ from energytool.infrastructure.llm.extractor import LlmFactExtractor
 from energytool.infrastructure.llm.gateway import LlmGateway
 from energytool.infrastructure.llm.reranker import GatewayReranker
 from energytool.infrastructure.llm.responder import LlmReplyWriter
+from energytool.infrastructure.llm.style_examples import load_style_examples
 from energytool.infrastructure.logs import configure_logging
 from energytool.infrastructure.telemetry import LogTelemetry
 
@@ -91,8 +93,19 @@ class Container:
     def condenser(self) -> LlmQuestionCondenser:
         return LlmQuestionCondenser(self.gateway)
 
+    def style_examples(self) -> tuple[StyleExample, ...]:
+        return load_style_examples(self.settings.style_examples_dir)
+
     def reply_writer(self) -> LlmReplyWriter:
-        return LlmReplyWriter(self.gateway)
+        return LlmReplyWriter(
+            self.gateway,
+            rules_first=self.settings.answer_layout == "rules_first",
+            best_last=self.settings.answer_evidence_order == "best_last",
+            style_examples=self.style_examples()
+            if self.settings.style_examples_mode == "block"
+            else (),
+            style_holdout=self.settings.style_examples_holdout,
+        )
 
 
 def build(env: Mapping[str, str] | None = None) -> Container:

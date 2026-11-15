@@ -5,13 +5,15 @@ import httpx
 
 from energytool.domain.knowledge import Evidence
 from energytool.domain.products import Product
-from energytool.domain.reply import ReplyPlan
+from energytool.domain.reply import ReplyPlan, StyleExample, StyleShot
 from energytool.domain.state import Message, Role
 from energytool.infrastructure.config import Settings
 from energytool.infrastructure.llm.gateway import LlmGateway
 from energytool.infrastructure.llm.prompts import FALLBACK_NO_EVIDENCE, FALLBACK_TAIL
 from energytool.infrastructure.llm.responder import (
+    REFUSAL_EXAMPLES,
     LlmReplyWriter,
+    PromptLayout,
     build_messages,
     clean_reply,
     template_reply,
@@ -136,3 +138,68 @@ def test_template_only_does_not_call_llm() -> None:
     reply_writer, seen = writer("не должно")
     assert reply_writer.write(plan(template_only=True), []).used_llm is False
     assert seen == []
+
+
+def test_default_prompt_keeps_best_first_order_and_no_style_block() -> None:
+    system = build_messages(plan(), [])[0]["content"]
+    assert "по убыванию близости к вопросу" in system
+    assert "{evidence_order}" not in system
+    assert "Образцы ответов" not in system
+
+
+def test_layout_moves_limits_before_facts_and_reverses_evidence() -> None:
+    base = plan()
+    second = replace(base.evidence[0], chunk=chunk("orem#цена", "цена", Product.OREM))
+    limit = replace(base.evidence[0], origin="pinned")
+    messages = build_messages(
+        replace(base, evidence=(*base.evidence, second, limit)),
+        [],
+        PromptLayout(rules_first=True, best_last=True),
+    )
+    last = messages[-1]["content"]
+    assert last.index("Границы и ограничения:") < last.index("Фрагменты базы знаний:")
+    assert last.index("[1] orem#цена") < last.index("[2] orem#порог")
+    assert "по возрастанию близости к вопросу" in messages[0]["content"]
+
+
+def test_topic_and_context_sections_get_their_own_blocks() -> None:
+    base = plan()
+    topic = replace(base.evidence[0], chunk=chunk("askue#цеха", "учёт", Product.METERING))
+    near = replace(base.evidence[0], chunk=chunk("orem#рядом", "сосед", Product.OREM))
+    evidence = (*base.evidence, replace(topic, origin="topic"), replace(near, origin="context"))
+    last = build_messages(replace(base, evidence=evidence), [])[-1]["content"]
+    facts, rest = last.split("Разделы по теме диалога")
+    assert "askue#цеха" not in facts and "[2]" not in facts
+    assert rest.index("askue#цеха") < rest.index("Соседние разделы") < rest.index("orem#рядом")
+
+
+def test_style_examples_go_to_system_prompt_as_block() -> None:
+    examples = (StyleExample("Панели на фасад ставите?", "Да, ставим."),)
+    system = build_messages(plan(), [], style_examples=examples)[0]["content"]
+    assert "Вопрос клиента: Панели на фасад ставите?\nОтвет консультанта: Да, ставим." in system
+
+
+def test_holdout_hides_style_example_for_the_same_question() -> None:
+    examples = (
+        StyleExample("Пользователь: Мы завод\nПользователь: Нам подходит опт?", "Проверим."),
+        StyleExample("Панели на фасад ставите?", "Да, ставим."),
+    )
+    reply_writer, seen = writer("Ответ.")
+    held_out = LlmReplyWriter(reply_writer._gateway, style_examples=examples, style_holdout=True)
+    held_out.write(plan(), [])
+    system = seen[0]["messages"][0]["content"]
+    assert "Да, ставим." in system and "Проверим." not in system
+
+
+def test_style_shots_replace_builtin_examples_except_refusals() -> None:
+    shot = StyleShot(
+        question="Панели на фасад ставите?",
+        history=(Message(Role.USER, "Панели на фасад ставите?", 0),),
+        evidence=EVIDENCE,
+        answer="Да, ставим.",
+    )
+    messages = build_messages(replace(plan(), shots=(shot,)), [])
+    assert len(messages) == 1 + 2 * REFUSAL_EXAMPLES + 2 + 1
+    assert messages[-2] == {"role": "assistant", "content": "Да, ставим."}
+    assert "Вопрос клиента: Панели на фасад ставите?" in messages[-3]["content"]
+    assert "[1] orem#порог" in messages[-3]["content"]
