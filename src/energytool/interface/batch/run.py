@@ -1,12 +1,4 @@
-"""Точка входа этапа 1 (solution.py): questions.csv → submission.csv.
-
-    DATA_DIR/questions.csv + DATA_DIR/knowledge-base.zip → ./submission.csv
-
-- вопросы обрабатываются параллельно по MAX_WORKERS;
-- бюджет времени: после RUN_BUDGET_SEC (по умолчанию 18 мин из 20) — ответы без LLM;
-- любая ошибка кейса → запасной ответ, прогон не падает и всегда пишет CSV;
-- итог прогона (время, p50/p95, деградации) — в лог и в stdout.
-"""
+"""Точка входа этапа 1 (solution.py): questions.csv → submission.csv."""
 
 from __future__ import annotations
 

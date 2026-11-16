@@ -1,8 +1,4 @@
-"""Результат шага ① Extractor в терминах домена.
-
-Extractor (адаптер LLM в infrastructure) обязан вернуть ровно эту структуру.
-JSON-схема для модели генерируется из этих классов и Contract Registry.
-"""
+"""Результат шага ① Extractor в терминах домена."""
 
 from __future__ import annotations
 

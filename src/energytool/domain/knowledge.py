@@ -1,11 +1,4 @@
-"""Знания из базы: разделы базы, запрос к поиску и найденные фрагменты.
-
-Поиск — use case application/retrieve_knowledge.py:
-    RetrieveKnowledge(query: KnowledgeQuery) -> KnowledgeResult
-где KnowledgeQuery — кортеж разнородных сниппетов: тексты, область поиска, бусты,
-закрепления, выборка по id, бюджет. Use case не знает про диалог и состояние:
-запрос из состояния собирает отдельная функция application/knowledge_request.py.
-"""
+"""Знания из базы: разделы базы, запрос к поиску и найденные фрагменты."""
 
 from __future__ import annotations
 

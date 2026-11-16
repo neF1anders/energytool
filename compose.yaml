@@ -1,5 +1,3 @@
-# Одна команда: docker compose up --build
-# Перед запуском: cp .env.example .env (ключ и модель), положить knowledge-base.zip в ./data/
 services:
   app:
     build: .

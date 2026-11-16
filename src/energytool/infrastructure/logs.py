@@ -1,15 +1,4 @@
-"""Логи: настройка stdlib logging, JSON-строки, маскирование ПДн и секретов, контекст хода.
-
-Договорённости (docs/spec.md §8.5):
-- domain не логирует — его решения попадают в TurnTrace;
-- application и infrastructure пишут в logging.getLogger(__name__);
-- структурированные поля передаются через extra={"data": {...}};
-- контекст (session_id, turn, qid) выставляет interface через log_context();
-- телефоны, e-mail, ключи и Bearer-токены маскируются фильтром на хендлере,
-  поэтому защищены все логгеры, включая сторонние (httpx).
-
-Логи идут в stderr: на платформе stdout остаётся для прогресса прогона.
-"""
+"""Логи: настройка stdlib logging, JSON-строки, маскирование ПДн и секретов, контекст хода."""
 
 from __future__ import annotations
 

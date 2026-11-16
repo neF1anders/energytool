@@ -1,8 +1,5 @@
 """LeadSink: заявка всегда сохраняется в таблицу leads; при заданном CRM_WEBHOOK_URL —
 ещё и POST JSON в CRM. Статусы: mock_sent (вебхука нет), sent, send_failed.
-
-Ошибка вебхука не теряет заявку: она остаётся в leads со статусом send_failed и видна
-на странице менеджера.
 """
 
 from __future__ import annotations

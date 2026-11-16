@@ -1,13 +1,4 @@
-"""Use case SubmitLead (spec §6.4): контакты → бриф → LeadSink.
-
-Два входа:
-- from_step(step)       — ⑦ внутри HandleTurn, когда диалог перешёл в SUBMITTED;
-- from_form(id, contact) — POST /api/sessions/{id}/lead (форма в виджете): контакты
-  записываются в состояние как ответы клиента и проходят ту же валидацию.
-
-Бриф строится кодом (domain.brief), LLM не участвует. Отправка синхронная: менеджер
-получает заявку сразу.
-"""
+"""Use case SubmitLead (spec §6.4): контакты → бриф → LeadSink."""
 
 from __future__ import annotations
 

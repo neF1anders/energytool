@@ -1,12 +1,4 @@
-"""SQLite через SQLAlchemy Core: схема и движок (spec §8.4).
-
-    sessions(id, created_at, updated_at, dialog_state, state_json)
-    messages(id, session_id, turn, role, text, created_at)
-    traces(id, session_id, turn, trace_json, created_at)
-    leads(id, session_id, created_at, brief_text, brief_json, sent_at, status)
-
-История всех сессий хранится, в том числе без заявки (требование кейса).
-"""
+"""SQLite через SQLAlchemy Core: схема и движок (spec §8.4)."""
 
 from __future__ import annotations
 

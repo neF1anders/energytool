@@ -1,8 +1,4 @@
-"""CLI для разработки: `uv run --env-file .env python -m energytool <команда>`.
-
-Команды:
-    ping   — проверить chat, embeddings и rerank на текущем профиле.
-"""
+"""CLI для разработки: `uv run --env-file .env python -m energytool <команда>`."""
 
 from __future__ import annotations
 

@@ -1,10 +1,4 @@
-"""Стенд диалогов: `uv run --env-file .env python -m eval.dialog [--personas ...] [--turns 8]`.
-
-Клиента играет LLM по легенде персоны, бот — настоящий HandleTurn (сессии в памяти).
-Метрики: полнота и точность анкеты относительно эталона, ходов до READY, верный ли
-лидер, исключены ли неподходящие продукты, дошли ли до заявки. Отчёт с транскриптами —
-в eval/data/results/.
-"""
+"""Стенд диалогов: `uv run --env-file .env python -m eval.dialog [--personas ...] [--turns 8]`."""
 
 from __future__ import annotations
 

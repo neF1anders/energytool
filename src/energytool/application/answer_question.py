@@ -1,14 +1,4 @@
-"""Use case AnswerQuestion: один тест-кейс этапа 1 (stateless, spec §6.3).
-
-Режимы (выбирает batch-раннер по оставшемуся времени):
-- FULL   — Extractor один раз по всей истории → состояние из одного Extraction →
-           Qualifier (reduce, score, policy, build_query, retrieve) → ReplyWriter;
-- FAST   — без Extractor: запрос из истории (наивный путь M2) → ReplyWriter;
-- NO_LLM — как FAST, но ответ шаблоном из лучшего фрагмента.
-
-FULL без extractor/qualifier или при их отказе деградирует в FAST. Ни один кейс не
-возвращает пустой ответ.
-"""
+"""Use case AnswerQuestion: один тест-кейс этапа 1 (stateless, spec §6.3)."""
 
 from __future__ import annotations
 

@@ -1,8 +1,4 @@
-"""Composition root веб-части: Container → SQLite, HandleTurn, SubmitLead, заявки.
-
-Отдельно от bootstrap.py, потому что bootstrap достижим из solution.py, а ZIP сабмита не
-должен импортировать SQLAlchemy/FastAPI (их нет в окружении платформы).
-"""
+"""Composition root веб-части: Container → SQLite, HandleTurn, SubmitLead, заявки."""
 
 from __future__ import annotations
 

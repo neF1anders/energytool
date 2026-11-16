@@ -1,15 +1,4 @@
-"""Плоская сборка ZIP для этапа 1 (spec §13): `uv run python tools/build_submission.py`.
-
-Регламент: в корне ZIP только .py и requirements.txt, без вложенных папок, данных и
-индексов. Поэтому пакет раскладывается плоско:
-- модуль energytool/a/b.py → energytool__a__b.py; пакет energytool/a/__init__.py →
-  energytool__a.py;
-- импорты `from energytool.a.b import X` переписываются в `from energytool__a__b import X`
-  (в коде только абсолютные импорты — ruff TID252);
-- в ZIP идут только модули, достижимые из solution.py по импортам (без http/storage/web);
-- requirements.txt = прямые зависимости ядра из pyproject.toml, каждая сверяется с
-  разрешённым списком организаторов (materials/data/requirements.txt), если он есть.
-"""
+"""Плоская сборка ZIP для этапа 1 (spec §13): `uv run python tools/build_submission.py`."""
 
 from __future__ import annotations
 
