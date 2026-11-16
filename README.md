@@ -70,6 +70,7 @@ docker compose up --build       # http://localhost:8000
 ```bash
 uv run python tools/build_submission.py                              # dist/submission.zip
 uv run python tools/build_submission.py --env BATCH_PIPELINE=full    # вариант с полным конвейером
+uv run python tools/build_submission.py --env BATCH_PIPELINE=dialogs # полный конвейер только для диалогов
 uv run python tools/build_submission.py --env BATCH_CONDENSE=true    # вариант с вопросом для поиска из диалога
 ```
 
