@@ -75,3 +75,10 @@ def test_keys_never_leak_into_summary_or_repr() -> None:
 def test_batch_pipeline_accepts_known_values_only(raw: str, expected: str) -> None:
     env = {"LLM_BASE_URL": "http://p/v1", "LLM_API_KEY": "k", "BATCH_PIPELINE": raw}
     assert Settings.from_env(env).batch_pipeline == expected
+
+
+def test_full_batch_tuning_flags_default_to_variant_i_and_clamp() -> None:
+    default = Settings.from_env({})
+    assert (default.batch_rerank_question, default.batch_leader_probability) == (False, 0.45)
+    tuned = Settings.from_env({"BATCH_RERANK_QUESTION": "1", "BATCH_LEADER_PROBABILITY": "0.05"})
+    assert (tuned.batch_rerank_question, tuned.batch_leader_probability) == (True, 0.2)

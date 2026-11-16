@@ -8,6 +8,7 @@ RetrieveKnowledge не знает про лидеров и кандидатов,
     последняя реплика клиента         → TextSnippet(weight=0.5)
     history_context: до 3 прошлых реплик клиента → TextSnippet(weight=0.5),
                      последняя реплика консультанта → контекст реранкера
+    question_context: одиночный вопрос клиента → ещё и контекст реранкера
     кандидаты board ∪ {general, energy} → ScopeSnippet   (нет кандидатов — без области)
     лидер                            → BoostSnippet(leader, 1.2)
                                        + PinSnippet(leader, {forbidden, not_fits})
@@ -53,6 +54,7 @@ def build_query(
     *,
     restrict_scope: bool = True,
     history_context: bool = False,
+    question_context: bool = False,
 ) -> KnowledgeQuery:
     """Сборка по правилам из docstring модуля. restrict_scope=False (батч: один вопрос без
     накопленного контекста) — область не сужается, лидер только бустится."""
@@ -66,6 +68,11 @@ def build_query(
     snippets.append(TextSnippet(main, weight=1.0))
     if last_user and last_user != main:
         snippets.append(TextSnippet(last_user, weight=0.5))
+        if question_context and _single_turn(state.history):
+            # реранкер видит только главный текст: переформулировка извлекателя теряет
+            # детали вопроса (цифры, объект), исходная реплика их возвращает; в диалоге
+            # последняя реплика обрывочна и на стенде только мешала
+            snippets.append(TextSnippet(last_user, role="context"))
     if history_context:
         snippets.extend(_history_snippets(state.history))
     if restrict_scope and decision.candidates:
@@ -77,6 +84,10 @@ def build_query(
         snippets.append(PinSnippet(leader_scope, LEADER_PIN_KINDS, limit=2))
     snippets.append(budget)
     return tuple(snippets)
+
+
+def _single_turn(messages: Sequence[Message]) -> bool:
+    return sum(1 for m in messages if m.role is Role.USER) == 1
 
 
 HISTORY_USER_TURNS = 3

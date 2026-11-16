@@ -24,6 +24,8 @@ from energytool.application.rerank_calibration import rerank_scores_calibrated
 from energytool.application.retrieval_stages import get_config
 from energytool.bootstrap import Container, build
 from energytool.domain.knowledge import BudgetSnippet
+from energytool.domain.policy import Thresholds
+from energytool.infrastructure.config import Settings
 from energytool.infrastructure.logs import log_context
 from energytool.interface.batch.submission import (
     EMPTY_ANSWER,
@@ -93,7 +95,9 @@ def answer_all(
         telemetry=container.telemetry,
         budget=budget,
         extractor=container.extractor() if full else None,
-        qualifier=container.qualifier(retrieve, budget) if full else None,
+        qualifier=container.qualifier(retrieve, budget, batch_thresholds(settings))
+        if full
+        else None,
         ask_in_batch=settings.batch_ask,
         condenser=container.condenser() if settings.batch_condense else None,
         with_guardrails=settings.batch_guardrails,
@@ -126,6 +130,11 @@ def answer_all(
                 print(f"  {done}/{len(questions)} за {deadline.elapsed():.0f} с", flush=True)
     log_summary(durations, modes, deadline, answers)
     return answers
+
+
+def batch_thresholds(settings: Settings) -> Thresholds:
+    """Пороги FULL этапа 1: лидер даёт буст его области и закрепляет её ограничения."""
+    return Thresholds(leader_probability=settings.batch_leader_probability)
 
 
 def answer_budget(container: Container, index: KnowledgeIndex) -> BudgetSnippet:

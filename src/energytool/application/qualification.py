@@ -57,6 +57,7 @@ class Qualifier:
     retrieve: Retriever
     budget: BudgetSnippet
     history_context: bool = False  # прошлые реплики клиента в запросе поиска
+    rerank_question: bool = False  # исходный вопрос клиента — контекст реранкера
 
     def step(
         self,
@@ -114,6 +115,7 @@ class Qualifier:
             budget,
             restrict_scope=mode == "chat",
             history_context=self.history_context,
+            question_context=self.rerank_question,
         )
         started = time.perf_counter()
         try:

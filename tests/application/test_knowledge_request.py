@@ -85,3 +85,34 @@ def test_history_context_is_empty_for_single_question() -> None:
     ex = Extraction(Intent.QUESTION, search_query="панели на фасаде")
     plain = build_query(ex, STATE, decision(), BUDGET)
     assert build_query(ex, STATE, decision(), BUDGET, history_context=True) == plain
+
+
+def test_question_context_gives_reranker_the_original_client_turn() -> None:
+    ex = Extraction(Intent.QUESTION, search_query="панели на фасаде здания")
+    plain = build_query(ex, STATE, decision(), BUDGET, restrict_scope=False)
+    rich = build_query(ex, STATE, decision(), BUDGET, restrict_scope=False, question_context=True)
+    assert TextSnippet("А на фасад можно?", role="context") not in plain
+    assert TextSnippet("А на фасад можно?", role="context") in rich
+
+
+def test_question_context_skipped_when_search_query_is_the_turn_itself() -> None:
+    plain = build_query(Extraction(Intent.QUESTION), STATE, decision(), BUDGET)
+    rich = build_query(
+        Extraction(Intent.QUESTION), STATE, decision(), BUDGET, question_context=True
+    )
+    assert rich == plain
+
+
+def test_question_context_leaves_dialogs_alone() -> None:
+    state = ConversationState(
+        "s",
+        history=[
+            Message(Role.USER, "У нас склад в Подмосковье", 1),
+            Message(Role.ASSISTANT, "Какая цель?", 1),
+            Message(Role.USER, "Снизить платёж. Есть смысл?", 2),
+        ],
+    )
+    ex = Extraction(Intent.QUESTION, search_query="окупаемость солнечной станции")
+    plain = build_query(ex, state, decision(), BUDGET, restrict_scope=False)
+    rich = build_query(ex, state, decision(), BUDGET, restrict_scope=False, question_context=True)
+    assert rich == plain

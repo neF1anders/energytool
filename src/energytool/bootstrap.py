@@ -73,17 +73,21 @@ class Container:
             reranker=self.reranker,
         )
 
-    def qualifier(self, retrieve: Retriever, budget: BudgetSnippet) -> Qualifier:
-        """Доменные правила и пороги — из domain (spec §5.5), не из окружения."""
+    def qualifier(
+        self, retrieve: Retriever, budget: BudgetSnippet, thresholds: Thresholds | None = None
+    ) -> Qualifier:
+        """Доменные правила и пороги — из domain (spec §5.5); батч этапа 1 может передать
+        свои пороги."""
         return Qualifier(
             registry=ContractRegistry(),
             rules=RULES,
             priors=PRIORS,
             params=ScoringParams(),
-            thresholds=Thresholds(),
+            thresholds=thresholds or Thresholds(),
             retrieve=retrieve,
             budget=budget,
             history_context=self.settings.batch_history_context,
+            rerank_question=self.settings.batch_rerank_question,
         )
 
     def extractor(self) -> LlmFactExtractor:
