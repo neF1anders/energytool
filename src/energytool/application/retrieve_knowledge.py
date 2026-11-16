@@ -1,14 +1,4 @@
-"""Use case RetrieveKnowledge: поиск по базе знаний.
-
-    RetrieveKnowledge(query: KnowledgeQuery) -> KnowledgeResult
-
-Вход — кортеж сниппетов (domain/knowledge.py), выход — Evidence в терминах домена.
-Use case не знает про диалог: запрос из состояния собирает knowledge_request.build_query.
-Поэтому его можно гонять напрямую на размеченных запросах (eval/retrieval) с разными
-конфигурациями стадий — без Extractor, Policy и LLM.
-
-Стадии, конфигурации и деградации — application/retrieval_stages.py.
-"""
+"""Use case RetrieveKnowledge: поиск по базе знаний."""
 
 from __future__ import annotations
 

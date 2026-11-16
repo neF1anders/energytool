@@ -1,16 +1,4 @@
-"""Dialogue Policy (spec §5.4): что делать на этом ходе. Чистая функция, LLM не участвует.
-
-    decide(state, extraction, board, registry, thresholds, mode) -> PolicyDecision
-    after_retrieval(decision, below_floor, mode) -> PolicyDecision
-
-Автомат — docs/diagrams/dialog-state.mmd. Кандидаты: P ≥ 0.25 (максимум 2). Лидер:
-P ≥ 0.45 и отрыв ≥ 0.15; смена лидера только при отрыве (гистерезис). В batch-режиме
-CONTACT не предлагается, а next_slot остаётся: эталоны в 2/3 случаев заканчиваются
-уточняющим вопросом.
-
-below_floor (ответа в базе нет) известен только после ретрива, поэтому переход «вопрос
-вне базы → CONTACT» делает отдельная функция after_retrieval.
-"""
+"""Dialogue Policy (spec §5.4): что делать на этом ходе. Чистая функция, LLM не участвует."""
 
 from __future__ import annotations
 

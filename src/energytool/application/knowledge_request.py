@@ -1,21 +1,5 @@
 """Сборка KnowledgeQuery из состояния диалога. Чистая функция, отделена от пайплайна поиска:
 RetrieveKnowledge не знает про лидеров и кандидатов, знает только сниппеты.
-
-    build_query(extraction, state, decision, budget, restrict_scope=True) -> KnowledgeQuery
-
-Правила:
-    extraction.search_query          → TextSnippet(weight=1.0)
-    последняя реплика клиента         → TextSnippet(weight=0.5)
-    history_context: до 3 прошлых реплик клиента → TextSnippet(weight=0.5),
-                     последняя реплика консультанта → контекст реранкера
-    кандидаты board ∪ {general, energy} → ScopeSnippet   (нет кандидатов — без области)
-    лидер                            → BoostSnippet(leader, 1.2)
-                                       + PinSnippet(leader, {forbidden, not_fits})
-    decision.pinned_sections         → IdSnippet
-    need_facts=False                 → только IdSnippet — без поиска и моделей
-    бюджет (с min_rerank_score = Thresholds.rerank_floor) → BudgetSnippet
-
-Батч этапа 1 (AnswerQuestion) использует ту же функцию.
 """
 
 from __future__ import annotations

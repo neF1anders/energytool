@@ -1,11 +1,4 @@
-"""Domain: сущности и чистые правила квалификации. Без IO, без LLM, без зависимостей.
-
-Доменные сервисы (чистые функции):
-- reducer.apply(state, extraction, registry) -> ConversationState
-- scorer.score(state, rules, params) -> ScoreBoard
-- dialog_policy.decide(state, extraction, board, registry, thresholds, mode) -> PolicyDecision
-- brief.build(state, board, registry, contact) -> Brief
-"""
+"""Domain: сущности и чистые правила квалификации. Без IO, без LLM, без зависимостей."""
 
 from energytool.domain.contract import ALL_SLOTS, ContractRegistry
 from energytool.domain.extraction import Extraction, Intent, SlotUpdate

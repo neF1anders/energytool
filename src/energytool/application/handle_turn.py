@@ -1,12 +1,4 @@
-"""Use case HandleTurn: один ход веб-чата (spec §6.2, docs/diagrams/turn-sequence.mmd).
-
-    0 SessionRepo → state;  ① Extractor;  ②–⑤ Qualifier;  ⑥ ReplyWriter;
-    ⑦ заявка и бриф при переходе в SUBMITTED;  8 SessionRepo, Telemetry
-
-Деградация: Extractor упал → Extraction(intent=QUESTION, search_query=реплика),
-состояние не меняется; ретрив и Responder деградируют внутри своих шагов. Ход никогда
-не возвращает пустой ответ.
-"""
+"""Use case HandleTurn: один ход веб-чата (spec §6.2, docs/diagrams/turn-sequence.mmd)."""
 
 from __future__ import annotations
 

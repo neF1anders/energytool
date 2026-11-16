@@ -1,16 +1,4 @@
-"""Стадии пайплайна RetrieveKnowledge и готовые конфигурации (spec §7.4).
-
-Стадия — функция (Candidates, Ctx) -> Candidates. Конфигурация — кортеж стадий плюс
-параметры. Эксперимент = другая конфигурация, use case не меняется.
-
-    by_id → scope → recall → fuse → boost → rerank → pin → fallback → pack
-
-Деградации (каждая пишется в Candidates.notes и в лог):
-- эмбеддер недоступен → recall только BM25 (dense_failed);
-- реранкер недоступен или выключен → ранжирование по RRF (rerank_failed / no_reranker);
-- fallback добавляет раздел вне области, только если он прошёл бы в top_k основного
-  ранжирования: иначе страховка от ошибки роутинга превращается в шум для ответа.
-"""
+"""Стадии пайплайна RetrieveKnowledge и готовые конфигурации (spec §7.4)."""
 
 from __future__ import annotations
 

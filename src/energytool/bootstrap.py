@@ -1,8 +1,4 @@
-"""Composition root: Settings → адаптеры → use cases. Единственное место сборки.
-
-Точки входа (CLI, batch, HTTP, eval) получают готовые объекты отсюда и не создают
-адаптеры сами. Профиль меняет только то, какие адаптеры собираются здесь.
-"""
+"""Composition root: Settings → адаптеры → use cases. Единственное место сборки."""
 
 from __future__ import annotations
 

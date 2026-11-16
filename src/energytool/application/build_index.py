@@ -1,13 +1,4 @@
-"""Use case BuildKnowledgeIndex: индексация базы на старте процесса (веб и solution.py).
-
-    load → split → tag → embed → build
-
-Источник, нарезка и разметка — порты (структуру базы Energytool знает infrastructure/kb).
-Результат — KnowledgeIndex, который получает RetrieveKnowledge.
-
-Id раздела = «файл#slug(путь без заголовка файла)», стабилен между запусками: на нём
-держатся разметка eval и ссылки на разделы из domain (pinned_sections).
-"""
+"""Use case BuildKnowledgeIndex: индексация базы на старте процесса (веб и solution.py)."""
 
 from __future__ import annotations
 

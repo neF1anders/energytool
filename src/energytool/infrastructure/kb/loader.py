@@ -1,8 +1,4 @@
-"""KnowledgeSource: knowledge-base.zip (без распаковки) или каталог с .md/.txt.
-
-Имена архива — как в регламенте и примере сабмита: knowledge-base.zip, knowledge_base.zip,
-kb.zip; для разработки допускается распакованный каталог knowledge-base/.
-"""
+"""KnowledgeSource: knowledge-base.zip (без распаковки) или каталог с .md/.txt."""
 
 from __future__ import annotations
 

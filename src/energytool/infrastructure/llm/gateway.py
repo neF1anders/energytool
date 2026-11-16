@@ -1,15 +1,4 @@
-"""LLM Gateway: httpx-клиент к OpenAI-совместимому прокси (docs/spec.md §8.1).
-
-Три операции: chat/completions, embeddings, rerank. У каждой свой эндпоинт из Settings
-(на платформе все три — один прокси). Общее для всех:
-- один httpx.Client (потокобезопасен) и общий семафор по MAX_WORKERS;
-- повторы на 429/5xx/таймаут/сетевую ошибку: до max_retries, пауза 0.5·2^n с, Retry-After
-  уважается (не дольше 8 с); прочие 4xx — сразу LlmRequestError;
-- каждый вызов → LlmCall в лог и в сборщик хода (application.trace.record_llm_call).
-
-Gateway ничего не знает про домен: адаптеры портов (extractor, responder, embedder,
-reranker) строятся поверх него.
-"""
+"""LLM Gateway: httpx-клиент к OpenAI-совместимому прокси (docs/spec.md §8.1)."""
 
 from __future__ import annotations
 

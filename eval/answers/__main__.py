@@ -1,9 +1,4 @@
-"""Стенд ответов: `uv run --env-file .env python -m eval.answers --team <submission.csv>`.
-
-Сравнивает ответы команды с baseline (по умолчанию eval/data/baseline/submission.csv —
-учебный пример организаторов) на демо-вопросах с эталонами. Отчёт с причинами судьи —
-в eval/data/results/.
-"""
+"""Стенд ответов: `uv run --env-file .env python -m eval.answers --team <submission.csv>`."""
 
 from __future__ import annotations
 

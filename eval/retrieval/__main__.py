@@ -1,9 +1,4 @@
-"""Стенд ретрива: `uv run --env-file .env python -m eval.retrieval [--configs ...] [--sets ...]`.
-
-Строит индекс по materials/data/knowledge-base.zip, прогоняет наборы через
-RetrieveKnowledge с разными PipelineConfig и печатает таблицу; полный отчёт с промахами
-сохраняется в eval/data/results/.
-"""
+"""Стенд ретрива: `uv run --env-file .env python -m eval.retrieval [--configs ...] [--sets ...]`."""
 
 from __future__ import annotations
 

@@ -1,8 +1,5 @@
 """Заявка текстовым файлом: `<LEADS_DIR>/<lead_id>.txt` — бриф, который менеджер открывает
 без CRM и без базы. Тот же текст отдаёт GET /api/leads/{id}.txt.
-
-Источник правды — таблица leads (SqliteLeadSink); файл — копия. Поэтому CompositeLeadSink
-пишет сначала в основной sink, а сбой файла только логирует: заявка не теряется.
 """
 
 from __future__ import annotations

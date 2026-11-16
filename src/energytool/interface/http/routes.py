@@ -1,19 +1,4 @@
-"""Маршруты HTTP API (spec §9.1). Тонкий слой: разбор входа → use case → ответ.
-
-POST /api/sessions                       → {session_id}
-POST /api/sessions/{id}/messages {text}  → SSE: event "token" (кусками), затем "meta"
-                                           (?stream=false — обычный JSON TurnOut)
-POST /api/sessions/{id}/reset            → {session_id} новой сессии («Новый диалог»)
-GET  /api/sessions/{id}/messages         → история
-GET  /api/sessions/{id}/debug            → TurnTrace[] сессии
-POST /api/sessions/{id}/lead {contact}    → {lead_id} (форма заявки в виджете)
-GET  /api/leads, /leads                  → заявки с брифами (JSON и страница менеджера)
-GET  /api/leads/{id}, /api/leads/{id}.txt → одна заявка (JSON) и её бриф файлом
-GET  /api/admin/traces?limit&since       → лента мониторинга: трассы всех сессий + сводка
-GET  /healthz
-GET  /, /static/{app.js,styles.css}      → консоль: чат, заявки, мониторинг
-GET  /widget-demo, /widget.js            → демо-страница встраиваемого виджета и сам виджет
-"""
+"""Маршруты HTTP API (spec §9.1). Тонкий слой: разбор входа → use case → ответ."""
 
 from __future__ import annotations
 

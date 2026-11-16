@@ -1,11 +1,4 @@
-"""Общий шаг квалификации для веба и батча (шаги ②–⑤ spec §6.2):
-
-    reduce → score → decide → build_query → retrieve → after_retrieval → ReplyPlan
-
-Вход — состояние с уже добавленной репликой клиента и Extraction; выход — новое
-состояние, доска, решение, найденные знания и план ответа. IO только через
-Retriever. Каждый шаг замеряется и пишется в TurnTrace.
-"""
+"""Общий шаг квалификации для веба и батча: reduce → score → decide → retrieve → ReplyPlan."""
 
 from __future__ import annotations
 

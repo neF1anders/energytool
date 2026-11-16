@@ -1,10 +1,4 @@
-"""FastAPI-приложение. Запуск:
-
-    uv run --env-file .env uvicorn energytool.interface.http.app:create_app --factory
-
-Индекс базы строится и thinking калибруется один раз на старте (lifespan). Все
-обработчики синхронные: use cases блокирующие, FastAPI выполняет их в пуле потоков.
-"""
+"""FastAPI-приложение: индекс и калибровка thinking на старте, обработчики синхронные."""
 
 from __future__ import annotations
 
