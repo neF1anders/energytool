@@ -98,6 +98,7 @@ class Settings:
     batch_acknowledge: bool = False  # подтверждения правил в ответе FULL этапа 1
     batch_history_context: bool = False  # прошлые реплики клиента в поиске FULL
     batch_rerank_question: bool = False  # реранкер FULL видит и исходный одиночный вопрос
+    batch_rewrite_only: bool = False  # одиночный вопрос FULL — только переформулировка
     batch_leader_probability: float = 0.45  # порог лидера в FULL этапа 1 (буст и ограничения)
     sqlite_path: Path = Path("var/energytool.sqlite")
     crm_webhook_url: str = ""  # пусто — заявка пишется в leads со статусом mock_sent
@@ -150,6 +151,7 @@ class Settings:
             batch_acknowledge=reader.flag("BATCH_ACKNOWLEDGE", default=False),
             batch_history_context=reader.flag("BATCH_HISTORY_CONTEXT", default=False),
             batch_rerank_question=reader.flag("BATCH_RERANK_QUESTION", default=False),
+            batch_rewrite_only=reader.flag("BATCH_REWRITE_ONLY", default=False),
             batch_leader_probability=reader.number("BATCH_LEADER_PROBABILITY", 0.45, 0.2, 0.9),
             sqlite_path=Path(reader.text("SQLITE_PATH", "var/energytool.sqlite")),
             crm_webhook_url=reader.url("CRM_WEBHOOK_URL"),

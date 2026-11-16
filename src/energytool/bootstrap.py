@@ -88,6 +88,7 @@ class Container:
             budget=budget,
             history_context=self.settings.batch_history_context,
             rerank_question=self.settings.batch_rerank_question,
+            rewrite_only=self.settings.batch_rewrite_only,
         )
 
     def extractor(self) -> LlmFactExtractor:

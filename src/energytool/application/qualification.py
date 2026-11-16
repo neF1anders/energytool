@@ -58,6 +58,7 @@ class Qualifier:
     budget: BudgetSnippet
     history_context: bool = False  # прошлые реплики клиента в запросе поиска
     rerank_question: bool = False  # исходный вопрос клиента — контекст реранкера
+    rewrite_only: bool = False  # одиночный вопрос ищется только по переформулировке
 
     def step(
         self,
@@ -116,6 +117,7 @@ class Qualifier:
             restrict_scope=mode == "chat",
             history_context=self.history_context,
             question_context=self.rerank_question,
+            rewrite_only=self.rewrite_only,
         )
         started = time.perf_counter()
         try:

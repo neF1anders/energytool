@@ -9,6 +9,7 @@ RetrieveKnowledge не знает про лидеров и кандидатов,
     history_context: до 3 прошлых реплик клиента → TextSnippet(weight=0.5),
                      последняя реплика консультанта → контекст реранкера
     question_context: одиночный вопрос клиента → ещё и контекст реранкера
+    rewrite_only: одиночный вопрос — только переформулировка, без исходной реплики
     кандидаты board ∪ {general, energy} → ScopeSnippet   (нет кандидатов — без области)
     лидер                            → BoostSnippet(leader, 1.2)
                                        + PinSnippet(leader, {forbidden, not_fits})
@@ -55,6 +56,7 @@ def build_query(
     restrict_scope: bool = True,
     history_context: bool = False,
     question_context: bool = False,
+    rewrite_only: bool = False,
 ) -> KnowledgeQuery:
     """Сборка по правилам из docstring модуля. restrict_scope=False (батч: один вопрос без
     накопленного контекста) — область не сужается, лидер только бустится."""
@@ -66,7 +68,10 @@ def build_query(
     last_user = next((m.text for m in reversed(state.history) if m.role is Role.USER), "")
     main = extraction.search_query or last_user
     snippets.append(TextSnippet(main, weight=1.0))
-    if last_user and last_user != main:
+    # rewrite_only: одиночный вопрос ищется только по переформулировке извлекателя —
+    # разговорные слова исходной реплики сбивали поиск (platform: decisions §11)
+    keep_turn = not (rewrite_only and _single_turn(state.history))
+    if last_user and last_user != main and keep_turn:
         snippets.append(TextSnippet(last_user, weight=0.5))
         if question_context and _single_turn(state.history):
             # реранкер видит только главный текст: переформулировка извлекателя теряет

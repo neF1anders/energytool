@@ -116,3 +116,17 @@ def test_question_context_leaves_dialogs_alone() -> None:
     plain = build_query(ex, state, decision(), BUDGET, restrict_scope=False)
     rich = build_query(ex, state, decision(), BUDGET, restrict_scope=False, question_context=True)
     assert rich == plain
+
+
+def test_rewrite_only_drops_original_single_question() -> None:
+    ex = Extraction(Intent.QUESTION, search_query="панели на фасаде здания")
+    plain = build_query(ex, STATE, decision(), BUDGET, restrict_scope=False)
+    pure = build_query(ex, STATE, decision(), BUDGET, restrict_scope=False, rewrite_only=True)
+    assert TextSnippet("А на фасад можно?", 0.5) in plain
+    assert TextSnippet("А на фасад можно?", 0.5) not in pure
+    assert TextSnippet("панели на фасаде здания", 1.0) in pure
+
+
+def test_rewrite_only_falls_back_to_turn_without_rewrite() -> None:
+    pure = build_query(Extraction(Intent.QUESTION), STATE, decision(), BUDGET, rewrite_only=True)
+    assert pure[0] == TextSnippet("А на фасад можно?", 1.0)
