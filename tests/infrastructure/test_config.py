@@ -70,7 +70,8 @@ def test_keys_never_leak_into_summary_or_repr() -> None:
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected"), [("full", "full"), ("dialogs", "dialogs"), ("", "naive"), ("x", "naive")]
+    ("raw", "expected"),
+    [("full", "full"), ("dialogs", "dialogs"), ("naive", "naive"), ("", "full"), ("x", "full")],
 )
 def test_batch_pipeline_accepts_known_values_only(raw: str, expected: str) -> None:
     env = {"LLM_BASE_URL": "http://p/v1", "LLM_API_KEY": "k", "BATCH_PIPELINE": raw}

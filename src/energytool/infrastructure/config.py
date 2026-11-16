@@ -93,7 +93,7 @@ class Settings:
     run_budget_sec: int = 1080
     fast_path_after_sec: int = 900
     # naive | full | dialogs (full только для ячеек с историей диалога)
-    batch_pipeline: str = "naive"
+    batch_pipeline: str = "full"  # платформа: full 64.1 против naive 61.2 (decisions §10)
     batch_ask: bool = False  # вопрос анкеты в ответе этапа 1: на демо слегка хуже
     batch_acknowledge: bool = False  # подтверждения правил в ответе FULL этапа 1
     batch_history_context: bool = False  # прошлые реплики клиента в поиске FULL
@@ -143,7 +143,7 @@ class Settings:
             log_format="text" if reader.text("LOG_FORMAT", "json") == "text" else "json",
             run_budget_sec=reader.integer("RUN_BUDGET_SEC", 1080, 60, 1200),
             fast_path_after_sec=reader.integer("FAST_PATH_SEC", 900, 0, 1200),
-            batch_pipeline=_parse_pipeline(reader.text("BATCH_PIPELINE", "naive")),
+            batch_pipeline=_parse_pipeline(reader.text("BATCH_PIPELINE", "full")),
             batch_ask=reader.flag("BATCH_ASK", default=False),
             batch_acknowledge=reader.flag("BATCH_ACKNOWLEDGE", default=False),
             batch_history_context=reader.flag("BATCH_HISTORY_CONTEXT", default=False),
@@ -272,5 +272,5 @@ BATCH_PIPELINES = ("naive", "full", "dialogs")
 
 
 def _parse_pipeline(value: str) -> str:
-    """Неизвестное значение — наивный путь: опечатка в переменной не должна ронять прогон."""
-    return value if value in BATCH_PIPELINES else "naive"
+    """Неизвестное значение — путь по умолчанию: опечатка в переменной не должна ронять прогон."""
+    return value if value in BATCH_PIPELINES else "full"

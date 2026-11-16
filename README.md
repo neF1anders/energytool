@@ -68,8 +68,8 @@ docker compose up --build       # http://localhost:8000
 ## Этап 1: сабмит на платформу
 
 ```bash
-uv run python tools/build_submission.py                              # dist/submission.zip
-uv run python tools/build_submission.py --env BATCH_PIPELINE=full    # вариант с полным конвейером
+uv run python tools/build_submission.py                              # dist/submission.zip, полный конвейер (лучший, 64.1)
+uv run python tools/build_submission.py --env BATCH_PIPELINE=naive   # наивный путь (61.2)
 uv run python tools/build_submission.py --env BATCH_PIPELINE=dialogs # полный конвейер только для диалогов
 uv run python tools/build_submission.py --env BATCH_CONDENSE=true    # вариант с вопросом для поиска из диалога
 ```
