@@ -62,3 +62,26 @@ def test_batch_does_not_restrict_scope_and_falls_back_to_last_message() -> None:
     )
     assert not any(isinstance(s, ScopeSnippet | BoostSnippet | PinSnippet) for s in query)
     assert query[0] == TextSnippet("А на фасад можно?", 1.0)
+
+
+def test_history_context_adds_earlier_client_turns_and_last_consultant_reply() -> None:
+    state = ConversationState(
+        "s",
+        history=[
+            Message(Role.USER, "У нас склад в Подмосковье", 1),
+            Message(Role.ASSISTANT, "Какая цель?", 1),
+            Message(Role.USER, "Снизить платёж. Есть смысл?", 2),
+        ],
+    )
+    ex = Extraction(Intent.QUESTION, search_query="окупаемость солнечной станции")
+    plain = build_query(ex, state, decision(), BUDGET, restrict_scope=False)
+    rich = build_query(ex, state, decision(), BUDGET, restrict_scope=False, history_context=True)
+    assert TextSnippet("У нас склад в Подмосковье", 0.5) not in plain
+    assert TextSnippet("У нас склад в Подмосковье", 0.5) in rich
+    assert TextSnippet("Какая цель?", role="context") in rich
+
+
+def test_history_context_is_empty_for_single_question() -> None:
+    ex = Extraction(Intent.QUESTION, search_query="панели на фасаде")
+    plain = build_query(ex, STATE, decision(), BUDGET)
+    assert build_query(ex, STATE, decision(), BUDGET, history_context=True) == plain

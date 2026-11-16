@@ -6,6 +6,8 @@ RetrieveKnowledge не знает про лидеров и кандидатов,
 Правила:
     extraction.search_query          → TextSnippet(weight=1.0)
     последняя реплика клиента         → TextSnippet(weight=0.5)
+    history_context: до 3 прошлых реплик клиента → TextSnippet(weight=0.5),
+                     последняя реплика консультанта → контекст реранкера
     кандидаты board ∪ {general, energy} → ScopeSnippet   (нет кандидатов — без области)
     лидер                            → BoostSnippet(leader, 1.2)
                                        + PinSnippet(leader, {forbidden, not_fits})
@@ -50,6 +52,7 @@ def build_query(
     budget: BudgetSnippet,
     *,
     restrict_scope: bool = True,
+    history_context: bool = False,
 ) -> KnowledgeQuery:
     """Сборка по правилам из docstring модуля. restrict_scope=False (батч: один вопрос без
     накопленного контекста) — область не сужается, лидер только бустится."""
@@ -63,6 +66,8 @@ def build_query(
     snippets.append(TextSnippet(main, weight=1.0))
     if last_user and last_user != main:
         snippets.append(TextSnippet(last_user, weight=0.5))
+    if history_context:
+        snippets.extend(_history_snippets(state.history))
     if restrict_scope and decision.candidates:
         scopes = {scope_for(p) for p in decision.candidates} | ALWAYS_IN_SCOPE
         snippets.append(ScopeSnippet(frozenset(scopes)))
@@ -72,6 +77,24 @@ def build_query(
         snippets.append(PinSnippet(leader_scope, LEADER_PIN_KINDS, limit=2))
     snippets.append(budget)
     return tuple(snippets)
+
+
+HISTORY_USER_TURNS = 3
+HISTORY_CHARS = 1200
+
+
+def _history_snippets(messages: Sequence[Message]) -> list[Snippet]:
+    """Ситуация клиента из прошлых реплик: извлекатель сжимает её в один запрос и
+    теряет детали (объект, способ сбора, профиль), которые нужны поиску и реранкеру."""
+    earlier = [m.text for m in messages if m.role is Role.USER][:-1][-HISTORY_USER_TURNS:]
+    if not earlier:
+        return []
+    situation = " ".join(earlier)[-HISTORY_CHARS:]
+    snippets: list[Snippet] = [TextSnippet(situation, weight=0.5)]
+    assistant = [m.text for m in messages if m.role is Role.ASSISTANT]
+    if assistant:
+        snippets.append(TextSnippet(assistant[-1], role="context"))
+    return snippets
 
 
 def query_from_history(

@@ -83,6 +83,7 @@ class Container:
             thresholds=Thresholds(),
             retrieve=retrieve,
             budget=budget,
+            history_context=self.settings.batch_history_context,
         )
 
     def extractor(self) -> LlmFactExtractor:

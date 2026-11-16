@@ -86,7 +86,7 @@ def answer_all(
     settings = container.settings
     retrieve = container.retriever(index)
     budget = answer_budget(container, index)
-    full = settings.batch_pipeline == "full"
+    full = settings.batch_pipeline in ("full", "dialogs")
     use_case = AnswerQuestion(
         retrieve=retrieve,
         writer=container.reply_writer(),
@@ -97,6 +97,8 @@ def answer_all(
         ask_in_batch=settings.batch_ask,
         condenser=container.condenser() if settings.batch_condense else None,
         with_guardrails=settings.batch_guardrails,
+        acknowledge_in_batch=settings.batch_acknowledge,
+        full_for_dialogs_only=settings.batch_pipeline == "dialogs",
     )
     answers: dict[str, str] = {}
     durations: list[float] = []
